@@ -110,6 +110,10 @@ export const config = {
         process.env.STELLAR_MIN_BALANCE ||
         "1",
     ),
+    /** Base transaction fee in stroops used as fallback when dynamic fee fetch is disabled or fails. Default 100. */
+    baseFeeStroops: parseInt(process.env.STELLAR_BASE_FEE_STROOPS || "100", 10),
+    /** When true, fetches the current recommended base fee from Horizon before each transaction. Falls back to baseFeeStroops on failure. */
+    useDynamicFees: process.env.STELLAR_USE_DYNAMIC_FEES === "true",
   },
 
   // Pi Network / Bridge
@@ -122,9 +126,7 @@ export const config = {
     apiUrl: process.env.PI_API_URL || "https://api.pi.network.com",
     /** Minimum Pi sent to user wallet for activation. Default 0.1 */
     minBalancePi: parseFloat(
-      process.env.WALLET_ACTIVATION_PI ||
-        process.env.PI_MIN_BALANCE ||
-        "0.1",
+      process.env.WALLET_ACTIVATION_PI || process.env.PI_MIN_BALANCE || "0.1",
     ),
     /** Network: testnet or mainnet */
     network: (process.env.PI_NETWORK || "testnet") as "testnet" | "mainnet",
