@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { config } from "../config/env";
+import { deepHealthCheck } from "../controllers/healthController";
 import reserveRoutes from "./reserveRoutes";
 import kycRoutes from "./kycRoutes";
 import recipientRoutes from "./recipientRoutes";
@@ -29,7 +30,7 @@ import investmentRoutes from "./investmentRoutes";
 
 const router: ReturnType<typeof Router> = Router();
 
-// Health check
+// Shallow health check — always 200, no dependency probing (used by load balancers)
 router.get("/health", (_req, res) => {
   res.json({
     status: "ok",
@@ -38,6 +39,9 @@ router.get("/health", (_req, res) => {
     version: config.apiVersion,
   });
 });
+
+// Deep health check — probes PostgreSQL, MongoDB, RabbitMQ; returns 503 if any are down
+router.get("/health/deep", deepHealthCheck);
 
 // Extended health / metrics (reserve ratio when available; for monitoring dashboards)
 router.get("/health/metrics", async (_req, res) => {
