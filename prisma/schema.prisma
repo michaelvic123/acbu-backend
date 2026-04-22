@@ -17,6 +17,8 @@ model Organization {
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
   apiKeys       ApiKey[]  @relation("OrganizationApiKeys")
   users         User[]    @relation("UserOrganization")
+  salaryBatches   SalaryBatch[]
+  salarySchedules SalarySchedule[]
 
   @@index([kycStatus], map: "idx_organization_kyc_status")
   @@map("organizations")
@@ -56,6 +58,8 @@ model User {
   contacts                 UserContact[]              @relation("UserContacts")
   passkeys                 UserPasskey[]
   organization             Organization?              @relation("UserOrganization", fields: [organizationId], references: [id])
+  salaryBatches            SalaryBatch[]
+  salarySchedules          SalarySchedule[]
 
   @@index([stellarAddress], map: "idx_stellar_address")
   @@index([username], map: "idx_username")
@@ -87,6 +91,7 @@ model Transaction {
   reserveHistory        ReserveHistory[]
   user                  User?                   @relation(fields: [userId], references: [id])
   webhooks              Webhook[]
+  salaryItem            SalaryItem?
 
   @@index([userId], map: "idx_transactions_user_id")
   @@index([type], map: "idx_transactions_type")
@@ -476,5 +481,67 @@ model KycValidatorReward {
   @@index([applicationId], map: "idx_kyc_validator_reward_application_id")
   @@index([status], map: "idx_kyc_validator_reward_status")
   @@map("kyc_validator_rewards")
+}
+
+model SalaryBatch {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String?      @map("organization_id") @db.Uuid
+  userId          String       @map("user_id") @db.Uuid
+  status          String       @default("pending") @db.VarChar(20)
+  totalAmount     Decimal      @map("total_amount") @db.Decimal(20, 8)
+  currency        String       @default("ACBU") @db.VarChar(10)
+  idempotencyKey  String?      @unique @map("idempotency_key") @db.VarChar(100)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamp(6)
+  completedAt     DateTime?    @map("completed_at") @db.Timestamp(6)
+  items           SalaryItem[]
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+  user            User         @relation(fields: [userId], references: [id])
+
+  @@index([organizationId], map: "idx_salary_batch_org_id")
+  @@index([userId], map: "idx_salary_batch_user_id")
+  @@index([status], map: "idx_salary_batch_status")
+  @@map("salary_batches")
+}
+
+model SalaryItem {
+  id               String       @id @default(uuid()) @db.Uuid
+  batchId          String       @map("batch_id") @db.Uuid
+  recipientId      String?      @map("recipient_id") @db.Uuid
+  recipientAddress String       @map("recipient_address") @db.VarChar(56)
+  amount           Decimal      @db.Decimal(20, 8)
+  status           String       @default("pending") @db.VarChar(20)
+  transactionId    String?      @unique @map("transaction_id") @db.Uuid
+  errorMessage     String?      @map("error_message") @db.Text
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamp(6)
+  batch            SalaryBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  transaction      Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([batchId], map: "idx_salary_item_batch_id")
+  @@index([status], map: "idx_salary_item_status")
+  @@map("salary_items")
+}
+
+model SalarySchedule {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String?      @map("organization_id") @db.Uuid
+  userId          String       @map("user_id") @db.Uuid
+  name            String       @db.VarChar(100)
+  cron            String       @db.VarChar(100)
+  amountConfig    Json         @map("amount_config")
+  currency        String       @default("ACBU") @db.VarChar(10)
+  status          String       @default("active") @db.VarChar(20)
+  lastRunAt       DateTime?    @map("last_run_at") @db.Timestamp(6)
+  nextRunAt       DateTime?    @map("next_run_at") @db.Timestamp(6)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamp(6)
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+  user            User         @relation(fields: [userId], references: [id])
+
+  @@index([organizationId], map: "idx_salary_schedule_org_id")
+  @@index([status], map: "idx_salary_schedule_status")
+  @@index([nextRunAt], map: "idx_salary_schedule_next_run")
+  @@map("salary_schedules")
 }
 

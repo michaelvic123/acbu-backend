@@ -147,6 +147,11 @@ async function startServer() {
         await import("./jobs/investmentWithdrawalJob");
       await startInvestmentWithdrawalScheduler();
 
+      // Salary schedule: trigger recurring salary payments
+      const { startSalaryScheduleScheduler } =
+        await import("./jobs/salaryScheduleJob");
+      await startSalaryScheduleScheduler();
+
       // Register MintEvent/BurnEvent handlers and start Stellar event listener (runs in background)
       const { startMintEventListener } =
         await import("./jobs/acbu_minting_event_listener");
