@@ -15,7 +15,7 @@ import {
 import { getRabbitMQChannel } from "../config/rabbitmq";
 import { QUEUES } from "../config/rabbitmq";
 
-const requestSchema = z.object({
+export const requestSchema = z.object({
   amount_acbu: z
     .string()
     .min(1)
@@ -105,7 +105,7 @@ export async function postInvestmentWithdrawRequest(
   }
 }
 
-const getWithdrawRequestsQuerySchema = z.object({
+export const getWithdrawRequestsQuerySchema = z.object({
   limit: z
     .string()
     .optional()

@@ -7,12 +7,12 @@ import {
 } from "../services/recovery/recoveryService";
 import { AppError } from "../middleware/errorHandler";
 
-const unlockAppSchema = z.object({
+export const unlockAppSchema = z.object({
   identifier: z.string().min(1, "identifier is required"),
   passcode: z.string().min(1, "passcode is required"),
 });
 
-const verifyRecoveryOtpSchema = z.object({
+export const verifyRecoveryOtpSchema = z.object({
   challenge_token: z.string().min(1, "challenge_token is required"),
   code: z.string().min(1, "code is required"),
 });

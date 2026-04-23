@@ -31,7 +31,7 @@ async function assertUserWalletAddress(
   return user.stellarAddress;
 }
 
-const bodySchema = z.object({
+export const bodySchema = z.object({
   stellar_address: z
     .string()
     .length(56)

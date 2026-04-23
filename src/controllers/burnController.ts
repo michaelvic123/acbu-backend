@@ -19,14 +19,14 @@ import { getBurnFeeBps } from "../services/feePolicy/feePolicyService";
 
 const DECIMALS_7 = 1e7;
 
-const recipientAccountSchema = z.object({
+export const recipientAccountSchema = z.object({
   type: z.enum(["bank", "mobile_money"]).optional(),
   account_number: z.string().min(1),
   bank_code: z.string().min(1),
   account_name: z.string().min(1),
 });
 
-const bodySchema = z.object({
+export const bodySchema = z.object({
   acbu_amount: z
     .string()
     .min(1)
