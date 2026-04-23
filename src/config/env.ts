@@ -13,7 +13,13 @@ const requiredEnvVars = [
 ];
 
 if (process.env.NODE_ENV === "production") {
-  requiredEnvVars.push("PRISMA_ACCELERATE_URL");
+  requiredEnvVars.push(
+    "PRISMA_ACCELERATE_URL",
+    // Webhook secrets are required in production so the server never starts
+    // in a fail-open state where forged webhooks could be accepted.
+    "FLUTTERWAVE_WEBHOOK_SECRET",
+    "PAYSTACK_SECRET_KEY",
+  );
 }
 
 const missing = requiredEnvVars.filter((v) => !process.env[v]);
@@ -138,16 +144,14 @@ export const config = {
     nativeAssetCode: ((): string => {
       const explicit = process.env.STELLAR_NATIVE_ASSET_CODE?.trim();
       if (explicit) return explicit.toUpperCase();
-      const bootstrapProfile = (
-        process.env.TESTNET_CUSTODIAL_BOOTSTRAP || ""
-      ).trim()
+      const bootstrapProfile = (process.env.TESTNET_CUSTODIAL_BOOTSTRAP || "")
+        .trim()
         .toLowerCase();
       return bootstrapProfile.includes("pi") ? "PI" : "XLM";
     })(),
     /** Wallet activation strategy. Default keeps the current create-account path, but makes it explicit/configurable. */
-    activationStrategy: (
-      process.env.WALLET_ACTIVATION_STRATEGY || "create_account_native"
-    ) as "create_account_native" | "disabled",
+    activationStrategy: (process.env.WALLET_ACTIVATION_STRATEGY ||
+      "create_account_native") as "create_account_native" | "disabled",
     /** Optional bootstrap profile from deployment docs/runbooks; used only for config alignment and diagnostics. */
     bootstrapProfile: process.env.TESTNET_CUSTODIAL_BOOTSTRAP || "",
     /** Minimum network-native balance sent to user wallet for activation. */

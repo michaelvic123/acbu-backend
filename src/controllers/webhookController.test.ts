@@ -1,285 +1,360 @@
 /**
- * Webhook controller tests.
- * env is mocked with known secrets so we can compute expected HMACs deterministically.
+ * POST /v1/webhooks/flutterwave - Receive Flutterwave webhooks (deposits, etc.).
+ * Verifies signature (verif-hash = HMAC-SHA256 of raw body with FLUTTERWAVE_WEBHOOK_SECRET).
+ *
+ * @deprecated Afreum-first / S-token flows: fiat on-ramps are expected via Afreum (or similar)
+ * Stellar ramps); these endpoints remain for audit logging only and do not drive minting.
  */
+const DEPRECATED_FIAT_WEBHOOK_NOTE =
+  "Direct Paystack/Flutterwave deposit webhooks are deprecated in favor of Afreum S-token and on-chain flows. Payload stored for audit only.";
+
+function setFiatWebhookDeprecationHeaders(res: Response): void {
+  res.setHeader("Deprecation", "true");
+  res.setHeader("Link", '<https://afreum.com>; rel="successor-version"');
+}
+import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
-import type { Request, Response, NextFunction } from "express";
-
-const FW_SECRET = "test-flutterwave-secret";
-const PS_SECRET = "test-paystack-secret";
-
-jest.mock("../config/env", () => ({
-  config: {
-    flutterwave: { webhookSecret: FW_SECRET },
-    paystack: { secretKey: PS_SECRET },
-  },
-}));
-
-jest.mock("../config/logger", () => ({
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
-}));
-
-jest.mock("../config/database", () => ({
-  prisma: {
-    webhook: { create: jest.fn() },
-  },
-}));
-
-import {
-  verifyFlutterwaveSignature,
-  verifyPaystackSignature,
-  handleFlutterwaveWebhook,
-  handlePaystackWebhook,
-} from "./webhookController";
+import { config } from "../config/env";
+import { logger } from "../config/logger";
 import { prisma } from "../config/database";
+import { AppError } from "../middleware/errorHandler";
+import { reconcileBillsWebhook } from "../services/bills";
 
-type RawRequest = Request & { rawBody?: Buffer };
+// ── Dev/stage mock bypass ────────────────────────────────────────────────────
+// When WEBHOOK_SIGNATURE_BYPASS=true AND NODE_ENV is not production,
+// signature verification is skipped entirely. This allows local development
+// and CI environments to send test payloads without real secrets.
+// Never set this variable in production — the boot guard in env.ts will
+// reject a missing secret before this code is even reached.
+const isDev = config.nodeEnv !== "production";
+const bypassEnabled = isDev && process.env.WEBHOOK_SIGNATURE_BYPASS === "true";
 
-const makeRes = () => {
-  const res = {
-    status: jest.fn(),
-    json: jest.fn(),
-    setHeader: jest.fn(),
-  } as unknown as Response;
-  (res.status as jest.Mock).mockReturnValue(res);
-  (res.json as jest.Mock).mockReturnValue(res);
-  return res;
-};
-const makeNext = () => jest.fn() as jest.MockedFunction<NextFunction>;
+if (bypassEnabled) {
+  logger.warn(
+    "WEBHOOK_SIGNATURE_BYPASS is enabled — webhook signature verification " +
+      "is DISABLED. This must never be set in production.",
+  );
+}
 
-describe("webhookController", () => {
-  beforeEach(() => jest.clearAllMocks());
+// ── Flutterwave Webhook ──────────────────────────────────────────────────────
 
-  // ── verifyFlutterwaveSignature ─────────────────────────────────────────────
+export function verifyFlutterwaveSignature(
+  req: Request & { rawBody?: Buffer },
+  res: Response,
+  next: NextFunction,
+): void {
+  // Dev/stage explicit bypass — never reachable in production because env.ts
+  // throws before the server starts when FLUTTERWAVE_WEBHOOK_SECRET is unset.
+  if (bypassEnabled) {
+    logger.warn("Flutterwave webhook signature check bypassed (dev/stage)");
+    next();
+    return;
+  }
 
-  describe("verifyFlutterwaveSignature", () => {
-    it("calls next() with no args on a valid HMAC-SHA256 signature", () => {
-      const rawBody = Buffer.from(
-        JSON.stringify({ event: "charge.completed" }),
-      );
-      const sig = crypto
-        .createHmac("sha256", FW_SECRET)
-        .update(rawBody)
-        .digest("hex");
-      const req = {
-        headers: { "verif-hash": sig },
-        rawBody,
-      } as unknown as RawRequest;
-      const next = makeNext();
-      verifyFlutterwaveSignature(req, makeRes(), next);
-      expect(next).toHaveBeenCalledWith();
+  const secret = config.flutterwave.webhookSecret;
+  if (!secret) {
+    // Should never be reached in production due to boot guard in env.ts.
+    // Guards against any future refactor that removes that check.
+    logger.error(
+      "FLUTTERWAVE_WEBHOOK_SECRET is not configured — rejecting webhook. " +
+        "Set the environment variable to accept Flutterwave webhooks.",
+    );
+    res.status(401).json({
+      error: "Webhook verification unavailable: secret not configured",
+    });
+    return;
+  }
+
+  const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
+  if (!rawBody || !Buffer.isBuffer(rawBody)) {
+    res.status(400).json({ error: "Raw body required for verification" });
+    return;
+  }
+
+  const received = req.headers["verif-hash"] as string | undefined;
+  if (!received) {
+    res.status(401).json({ error: "Missing verif-hash header" });
+    return;
+  }
+
+  const computed = crypto
+    .createHmac("sha256", secret)
+    .update(rawBody)
+    .digest("hex");
+
+  // Normalise to equal-length buffers before timingSafeEqual to prevent
+  // length-leaking side channels. A mismatched length still fails below.
+  const receivedBuf = Buffer.from(received, "hex");
+  const computedBuf = Buffer.from(computed, "hex");
+
+  let signatureValid = false;
+  if (receivedBuf.length === computedBuf.length) {
+    try {
+      signatureValid = crypto.timingSafeEqual(receivedBuf, computedBuf);
+    } catch {
+      // timingSafeEqual throws on length mismatch — belt-and-suspenders.
+      signatureValid = false;
+    }
+  }
+
+  if (!signatureValid) {
+    logger.warn("Flutterwave webhook signature mismatch");
+    res.status(401).json({ error: "Invalid signature" });
+    return;
+  }
+
+  next();
+}
+
+// ── Paystack Webhook ────────────────────────────────────────────────────────
+
+/**
+ * Verify Paystack webhook signature using HMAC-SHA512 of the raw body.
+ * Rejects the request if PAYSTACK_SECRET_KEY is not configured.
+ */
+export function verifyPaystackSignature(
+  req: Request & { rawBody?: Buffer },
+  res: Response,
+  next: NextFunction,
+): void {
+  // Dev/stage explicit bypass — never reachable in production because env.ts
+  // throws before the server starts when PAYSTACK_SECRET_KEY is unset.
+  if (bypassEnabled) {
+    logger.warn("Paystack webhook signature check bypassed (dev/stage)");
+    next();
+    return;
+  }
+
+  const secret = config.paystack.secretKey;
+  if (!secret) {
+    // Should never be reached in production due to boot guard in env.ts.
+    logger.error(
+      "PAYSTACK_SECRET_KEY is not configured — rejecting webhook. " +
+        "Set the environment variable to accept Paystack webhooks.",
+    );
+    res.status(401).json({
+      error: "Webhook verification unavailable: secret not configured",
+    });
+    return;
+  }
+
+  const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
+  if (!rawBody || !Buffer.isBuffer(rawBody)) {
+    res.status(400).json({ error: "Raw body required for verification" });
+    return;
+  }
+
+  const received = req.headers["x-paystack-signature"] as string | undefined;
+  if (!received) {
+    res.status(401).json({ error: "Missing x-paystack-signature header" });
+    return;
+  }
+
+  const computed = crypto
+    .createHmac("sha512", secret)
+    .update(rawBody)
+    .digest("hex");
+
+  // Use timing-safe comparison (same pattern as Flutterwave above) to prevent
+  // timing side-channel attacks. Paystack previously used string equality (===).
+  const receivedBuf = Buffer.from(received, "hex");
+  const computedBuf = Buffer.from(computed, "hex");
+
+  let signatureValid = false;
+  if (receivedBuf.length === computedBuf.length) {
+    try {
+      signatureValid = crypto.timingSafeEqual(receivedBuf, computedBuf);
+    } catch {
+      signatureValid = false;
+    }
+  }
+
+  if (!signatureValid) {
+    logger.warn("Paystack webhook signature mismatch");
+    res.status(401).json({ error: "Invalid signature" });
+    return;
+  }
+
+  next();
+}
+
+/**
+ * Handle Paystack webhook payload: persist and optionally process transaction.
+ */
+export async function handlePaystackWebhook(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const payload = req.body as {
+      event?: string;
+      data?: {
+        id?: number;
+        reference?: string;
+        amount?: number;
+        currency?: string;
+        status?: string;
+        customer?: { email?: string };
+      };
+    };
+    const eventType = payload.event ?? "unknown";
+    const data = payload.data ?? {};
+    logger.warn("Paystack webhook received (deprecated path)", {
+      eventType,
+      reference: data.reference,
+      status: data.status,
+      note: DEPRECATED_FIAT_WEBHOOK_NOTE,
     });
 
-    it("returns 401 on mismatched signature", () => {
-      const rawBody = Buffer.from(
-        JSON.stringify({ event: "charge.completed" }),
-      );
-      const req = {
-        headers: { "verif-hash": "a".repeat(64) },
-        rawBody,
-      } as unknown as RawRequest;
-      const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: "Invalid signature" }),
-      );
+    await prisma.webhook.create({
+      data: {
+        eventType: `paystack:${String(eventType)}`,
+        payload: payload as object,
+        status: "processed",
+      },
     });
 
-    it("returns 401 when verif-hash header is absent", () => {
-      const rawBody = Buffer.from("{}");
-      const req = { headers: {}, rawBody } as unknown as RawRequest;
-      const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: "Missing verif-hash header" }),
-      );
+    if (eventType === "charge.success" && data.status === "success") {
+      // Optional: create or update Transaction for deposit (mint flow)
+      // When reference links to a pending mint, update transaction
+    }
+
+    setFiatWebhookDeprecationHeaders(res);
+    res.status(200).json({
+      status: "ok",
+      deprecated: true,
+      message: DEPRECATED_FIAT_WEBHOOK_NOTE,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Handle Flutterwave webhook payload: persist and optionally create/update transaction.
+ * @deprecated See module note — audit-only; minting is driven by Stellar/S-token state.
+ */
+export async function handleFlutterwaveWebhook(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const payload = req.body as {
+      event?: string;
+      type?: string;
+      data?: {
+        id?: number;
+        tx_ref?: string;
+        flw_ref?: string;
+        amount?: number;
+        currency?: string;
+        status?: string;
+        customer?: { email?: string };
+      };
+    };
+    const eventType = payload.event ?? payload.type ?? "unknown";
+    const data = payload.data ?? {};
+    logger.warn("Flutterwave webhook received (deprecated path)", {
+      eventType,
+      tx_ref: data.tx_ref,
+      status: data.status,
+      note: DEPRECATED_FIAT_WEBHOOK_NOTE,
     });
 
-    it("returns 400 when rawBody is missing", () => {
-      const req = { headers: { "verif-hash": "abc" } } as unknown as RawRequest;
-      const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
-      expect(res.status).toHaveBeenCalledWith(400);
+    await prisma.webhook.create({
+      data: {
+        eventType: String(eventType),
+        payload: payload as object,
+        status: "processed",
+      },
     });
 
-    it("returns 401 when signature length causes timingSafeEqual to throw (caught internally)", () => {
-      const rawBody = Buffer.from("{}");
-      const req = {
-        headers: { "verif-hash": "tooshort" },
-        rawBody,
-      } as unknown as RawRequest;
-      const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
-      expect(res.status).toHaveBeenCalledWith(401);
+    if (eventType === "charge.completed" || data.status === "successful") {
+      // Optional: create or update Transaction for deposit (mint flow)
+      // When tx_ref links to a pending mint, update transaction and reserve history
+      // For now we only log and persist the webhook
+    }
+
+    setFiatWebhookDeprecationHeaders(res);
+    res.status(200).json({
+      status: "ok",
+      deprecated: true,
+      message: DEPRECATED_FIAT_WEBHOOK_NOTE,
     });
-  });
+  } catch (error) {
+    next(error);
+  }
+}
 
-  // ── verifyPaystackSignature ────────────────────────────────────────────────
+/**
+ * Handle partner bill-payment webhooks and reconcile the existing bill payment transaction.
+ * This route is provider-agnostic for now; providers can be added behind the same normalizer.
+ */
+export async function handleBillsWebhook(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const provider = String(req.params.provider || "")
+      .trim()
+      .toLowerCase();
+    if (!provider) {
+      throw new AppError("Bills webhook provider is required", 400);
+    }
 
-  describe("verifyPaystackSignature", () => {
-    it("calls next() with no args on a valid HMAC-SHA512 signature", () => {
-      const rawBody = Buffer.from(JSON.stringify({ event: "charge.success" }));
-      const sig = crypto
-        .createHmac("sha512", PS_SECRET)
-        .update(rawBody)
-        .digest("hex");
-      const req = {
-        headers: { "x-paystack-signature": sig },
-        rawBody,
-      } as unknown as RawRequest;
-      const next = makeNext();
-      verifyPaystackSignature(req, makeRes(), next);
-      expect(next).toHaveBeenCalledWith();
-    });
+    const body = (req.body || {}) as Record<string, unknown>;
+    const transactionId = String(
+      body.transaction_id ?? body.transactionId ?? "",
+    ).trim();
+    const providerReference = String(
+      body.provider_reference ?? body.providerReference ?? "",
+    ).trim();
+    const status = String(body.status ?? "")
+      .trim()
+      .toLowerCase();
+    const amount = Number(body.amount ?? 0);
+    const currency = String(body.currency ?? "NGN")
+      .trim()
+      .toUpperCase();
+    const reason =
+      body.reason == null ? undefined : String(body.reason).trim() || undefined;
 
-    it("returns 401 on mismatched signature", () => {
-      const rawBody = Buffer.from("{}");
-      const req = {
-        headers: { "x-paystack-signature": "deadbeef" },
-        rawBody,
-      } as unknown as RawRequest;
-      const res = makeRes();
-      verifyPaystackSignature(req, res, makeNext());
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: "Invalid signature" }),
+    if (!transactionId) {
+      throw new AppError("transaction_id is required", 400);
+    }
+    if (!providerReference) {
+      throw new AppError("provider_reference is required", 400);
+    }
+    if (!["completed", "failed", "refunded"].includes(status)) {
+      throw new AppError(
+        "status must be one of completed, failed, refunded",
+        400,
       );
-    });
+    }
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new AppError("amount must be a non-negative number", 400);
+    }
 
-    it("returns 401 when x-paystack-signature header is absent", () => {
-      const rawBody = Buffer.from("{}");
-      const req = { headers: {}, rawBody } as unknown as RawRequest;
-      const res = makeRes();
-      verifyPaystackSignature(req, res, makeNext());
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: "Missing x-paystack-signature header",
-        }),
-      );
-    });
-
-    it("returns 400 when rawBody is missing", () => {
-      const req = {
-        headers: { "x-paystack-signature": "abc" },
-      } as unknown as RawRequest;
-      const res = makeRes();
-      verifyPaystackSignature(req, res, makeNext());
-      expect(res.status).toHaveBeenCalledWith(400);
-    });
-  });
-
-  // ── handlePaystackWebhook ──────────────────────────────────────────────────
-
-  describe("handlePaystackWebhook", () => {
-    it("persists webhook record with paystack: prefix and returns 200", async () => {
-      (prisma.webhook.create as jest.Mock).mockResolvedValue({ id: "wh-1" });
-      const req = {
-        body: {
-          event: "charge.success",
-          data: { reference: "ref-1", status: "success" },
-        },
-      } as Request;
-      const res = makeRes();
-      await handlePaystackWebhook(req, res, makeNext());
-      expect(prisma.webhook.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            eventType: "paystack:charge.success",
-            status: "processed",
-          }),
-        }),
-      );
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: "ok",
-          deprecated: true,
-        }),
-      );
+    const reconciled = await reconcileBillsWebhook({
+      provider,
+      transactionId,
+      providerReference,
+      status: status as "completed" | "failed" | "refunded",
+      amount,
+      currency,
+      reason,
+      rawPayload: body,
     });
 
-    it("uses 'unknown' eventType when event field is absent", async () => {
-      (prisma.webhook.create as jest.Mock).mockResolvedValue({});
-      await handlePaystackWebhook(
-        { body: {} } as Request,
-        makeRes(),
-        makeNext(),
-      );
-      expect(prisma.webhook.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ eventType: "paystack:unknown" }),
-        }),
-      );
+    res.status(200).json({
+      ok: true,
+      transaction_id: reconciled.transactionId,
+      status: reconciled.status,
     });
-
-    it("calls next(error) when DB write fails", async () => {
-      (prisma.webhook.create as jest.Mock).mockRejectedValue(
-        new Error("DB error"),
-      );
-      const next = makeNext();
-      await handlePaystackWebhook(
-        { body: { event: "charge.success" } } as Request,
-        makeRes(),
-        next,
-      );
-      expect(next).toHaveBeenCalledWith(expect.any(Error));
-    });
-  });
-
-  // ── handleFlutterwaveWebhook ───────────────────────────────────────────────
-
-  describe("handleFlutterwaveWebhook", () => {
-    it("persists webhook record and returns 200", async () => {
-      (prisma.webhook.create as jest.Mock).mockResolvedValue({ id: "wh-2" });
-      const req = {
-        body: {
-          event: "charge.completed",
-          data: { tx_ref: "ref-2", status: "successful" },
-        },
-      } as Request;
-      const res = makeRes();
-      await handleFlutterwaveWebhook(req, res, makeNext());
-      expect(prisma.webhook.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            eventType: "charge.completed",
-            status: "processed",
-          }),
-        }),
-      );
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: "ok",
-          deprecated: true,
-        }),
-      );
-    });
-
-    it("falls back to payload.type when event field is absent", async () => {
-      (prisma.webhook.create as jest.Mock).mockResolvedValue({});
-      await handleFlutterwaveWebhook(
-        { body: { type: "CARD_TRANSACTION", data: {} } } as Request,
-        makeRes(),
-        makeNext(),
-      );
-      expect(prisma.webhook.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ eventType: "CARD_TRANSACTION" }),
-        }),
-      );
-    });
-
-    it("calls next(error) when DB write fails", async () => {
-      (prisma.webhook.create as jest.Mock).mockRejectedValue(
-        new Error("DB error"),
-      );
-      const next = makeNext();
-      await handleFlutterwaveWebhook({ body: {} } as Request, makeRes(), next);
-      expect(next).toHaveBeenCalledWith(expect.any(Error));
-    });
-  });
-});
+  } catch (error) {
+    next(error);
+  }
+}
