@@ -19,6 +19,7 @@ model Organization {
   users         User[]    @relation("UserOrganization")
   salaryBatches   SalaryBatch[]
   salarySchedules SalarySchedule[]
+  bulkTransferJobs BulkTransferJob[]
 
   @@index([kycStatus], map: "idx_organization_kyc_status")
   @@map("organizations")
@@ -85,6 +86,7 @@ model Transaction {
   fee                   Decimal?                @db.Decimal(20, 8)
   rateSnapshot          Json?                   @map("rate_snapshot")
   blockchainTxHash      String?                 @map("blockchain_tx_hash") @db.VarChar(255)
+  idempotencyKey        String?                 @unique @map("idempotency_key") @db.VarChar(255)
   confirmations         Int                     @default(0)
   createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamp(6)
   completedAt           DateTime?               @map("completed_at") @db.Timestamp(6)
@@ -543,5 +545,25 @@ model SalarySchedule {
   @@index([status], map: "idx_salary_schedule_status")
   @@index([nextRunAt], map: "idx_salary_schedule_next_run")
   @@map("salary_schedules")
+}
+
+model BulkTransferJob {
+  id                String       @id @default(uuid()) @db.Uuid
+  organizationId    String       @map("organization_id") @db.Uuid
+  status            String       @default("pending") @db.VarChar(20)
+  totalRows         Int          @map("total_rows")
+  processedRows     Int          @default(0) @map("processed_rows")
+  successCount      Int          @default(0) @map("success_count")
+  failureCount      Int          @default(0) @map("failure_count")
+  failureReport     Json?        @map("failure_report")
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  completedAt       DateTime?    @map("completed_at") @db.Timestamp(6)
+  errorMessage      String?      @db.Text
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId], map: "idx_bulk_transfer_job_org_id")
+  @@index([status], map: "idx_bulk_transfer_job_status")
+  @@index([createdAt], map: "idx_bulk_transfer_job_created_at")
+  @@map("bulk_transfer_jobs")
 }
 

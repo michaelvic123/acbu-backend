@@ -327,6 +327,16 @@ export const config = {
     },
   },
 
+  // Bulk transfer
+  bulkTransfer: {
+    chunkSize: parseInt(process.env.BULK_TRANSFER_CHUNK_SIZE || "100", 10),
+    maxFileSizeBytes: parseInt(
+      process.env.BULK_TRANSFER_MAX_FILE_SIZE_BYTES ||
+        String(10 * 1024 * 1024),
+      10,
+    ),
+  },
+
   // CORS
   corsOrigin: process.env.CORS_ORIGIN?.split(",") || ["*"],
 };
