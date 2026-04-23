@@ -27,26 +27,23 @@ jest.mock("../src/services/stellar/feeManager", () => ({
   getBaseFee: jest.fn().mockResolvedValue("100"),
 }));
 
-// Mock the Stellar SDK so TransactionBuilder/Keypair/Operation don't run real crypto.
-// We're testing the service's try/catch logic, not the SDK itself.
-const mockSign = jest.fn();
-const mockBuild = jest.fn().mockReturnValue({ sign: mockSign });
-const mockAddOperation = jest.fn().mockReturnThis();
-const mockTransactionBuilder = jest.fn().mockImplementation(() => ({
-  addOperation: mockAddOperation,
-  build: mockBuild,
-}));
-const mockFromSecret = jest.fn().mockReturnValue({
-  publicKey: () => "G" + "A".repeat(55),
-  sign: jest.fn(),
+// Mock the Stellar SDK so TransactionBuilder/Keypair/Operation don't hit real crypto.
+// All mock state is self-contained inside the factory — jest.mock is hoisted before
+// any const declarations, so external variables would be undefined at factory time.
+jest.mock("@stellar/stellar-sdk", () => {
+  const mockTx = { sign: jest.fn() };
+  const mockBuilder = { addOperation: jest.fn().mockReturnThis(), build: jest.fn().mockReturnValue(mockTx) };
+  return {
+    ...jest.requireActual("@stellar/stellar-sdk"),
+    Keypair: {
+      fromSecret: jest.fn().mockReturnValue({ publicKey: () => "G" + "A".repeat(55) }),
+      random: jest.fn(),
+    },
+    TransactionBuilder: jest.fn().mockImplementation(() => mockBuilder),
+    Operation: { payment: jest.fn().mockReturnValue({}) },
+    Asset: jest.requireActual("@stellar/stellar-sdk").Asset,
+  };
 });
-jest.mock("@stellar/stellar-sdk", () => ({
-  ...jest.requireActual("@stellar/stellar-sdk"),
-  Keypair: { fromSecret: (...args: unknown[]) => mockFromSecret(...args), random: jest.fn() },
-  TransactionBuilder: (...args: unknown[]) => mockTransactionBuilder(...args),
-  Operation: { payment: jest.fn().mockReturnValue({}) },
-  Asset: jest.requireActual("@stellar/stellar-sdk").Asset,
-}));
 
 jest.mock("../src/config/logger", () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
