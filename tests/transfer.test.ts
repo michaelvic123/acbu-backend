@@ -27,6 +27,27 @@ jest.mock("../src/services/stellar/feeManager", () => ({
   getBaseFee: jest.fn().mockResolvedValue("100"),
 }));
 
+// Mock the Stellar SDK so TransactionBuilder/Keypair/Operation don't run real crypto.
+// We're testing the service's try/catch logic, not the SDK itself.
+const mockSign = jest.fn();
+const mockBuild = jest.fn().mockReturnValue({ sign: mockSign });
+const mockAddOperation = jest.fn().mockReturnThis();
+const mockTransactionBuilder = jest.fn().mockImplementation(() => ({
+  addOperation: mockAddOperation,
+  build: mockBuild,
+}));
+const mockFromSecret = jest.fn().mockReturnValue({
+  publicKey: () => "G" + "A".repeat(55),
+  sign: jest.fn(),
+});
+jest.mock("@stellar/stellar-sdk", () => ({
+  ...jest.requireActual("@stellar/stellar-sdk"),
+  Keypair: { fromSecret: (...args: unknown[]) => mockFromSecret(...args), random: jest.fn() },
+  TransactionBuilder: (...args: unknown[]) => mockTransactionBuilder(...args),
+  Operation: { payment: jest.fn().mockReturnValue({}) },
+  Asset: jest.requireActual("@stellar/stellar-sdk").Asset,
+}));
+
 jest.mock("../src/config/logger", () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
@@ -210,31 +231,14 @@ describe("createTransfer", () => {
     (mockTx.update as jest.Mock).mockResolvedValue({});
 
     const mockServer = {
-      loadAccount: jest.fn().mockResolvedValue({
-        accountId: () => SENDER_STELLAR,
-        sequenceNumber: () => "1",
-        incrementSequenceNumber: jest.fn(),
-        sequence: "1",
-        balances: [],
-        subentry_count: 0,
-        thresholds: { low_threshold: 0, med_threshold: 0, high_threshold: 0 },
-        flags: {},
-        signers: [],
-        data_attr: {},
-        id: SENDER_STELLAR,
-      }),
+      loadAccount: jest.fn().mockResolvedValue({}),
       submitTransaction: jest.fn().mockResolvedValue({ hash: "stellar-tx-hash" }),
     };
     (stellarClient.getServer as jest.Mock).mockReturnValue(mockServer);
-    (stellarClient.getNetworkPassphrase as jest.Mock).mockReturnValue("Test SDF Network ; September 2015");
-
-    // Use a real testnet keypair secret for signing
-    const { Keypair } = await import("@stellar/stellar-sdk");
-    const keypair = Keypair.random();
 
     const result = await createTransfer(
       { senderUserId: SENDER_ID, to: "@bob", amountAcbu: "10" },
-      { getSenderSigningKey: async () => keypair.secret() },
+      { getSenderSigningKey: async () => "STEST_SECRET_KEY" },
     );
 
     expect(result.status).toBe("completed");
@@ -261,12 +265,9 @@ describe("createTransfer", () => {
     };
     (stellarClient.getServer as jest.Mock).mockReturnValue(mockServer);
 
-    const { Keypair } = await import("@stellar/stellar-sdk");
-    const keypair = Keypair.random();
-
     const result = await createTransfer(
       { senderUserId: SENDER_ID, to: "@bob", amountAcbu: "10" },
-      { getSenderSigningKey: async () => keypair.secret() },
+      { getSenderSigningKey: async () => "STEST_SECRET_KEY" },
     );
 
     expect(result.status).toBe("failed");
