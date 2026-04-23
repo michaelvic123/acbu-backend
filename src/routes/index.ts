@@ -41,6 +41,10 @@ router.get("/health", (_req, res) => {
   });
 });
 
+// Kubernetes readiness check — probes all critical dependencies; returns 503 if any are down
+// Use this endpoint for K8s readinessProbe configurations
+router.get("/health/ready", deepHealthCheck);
+
 // Deep health check — probes PostgreSQL, MongoDB, RabbitMQ; returns 503 if any are down
 router.get("/health/deep", deepHealthCheck);
 
