@@ -6,6 +6,7 @@ import {
   postSalaryDisburse,
   getSalaryBatches,
   postSalarySchedule,
+  getSalarySchedules,
 } from "../controllers/salaryController";
 
 const router: IRouter = Router();
@@ -17,5 +18,6 @@ router.use(apiKeyRateLimiter);
 router.post("/disburse", postSalaryDisburse);
 router.post("/schedule", postSalarySchedule);
 router.get("/batches", getSalaryBatches);
+router.get("/schedules", getSalarySchedules);
 
 export default router;
