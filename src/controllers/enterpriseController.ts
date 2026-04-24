@@ -54,39 +54,13 @@ export async function postBulkTransfer(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const organizationId = req.apiKey?.organizationId;
-    const userId = req.apiKey?.userId;
+    // TODO: bulk transfer (many transfers); idempotency; enterprise limits
+    throw new AppError(
+      "Bulk transfer endpoint not yet implemented. Use /transfers for single transfers.",
+      501,
+      "NOT_IMPLEMENTED",
+    );
 
-    if (!organizationId || !userId) {
-      throw new AppError("Enterprise authentication required", 401);
-    }
-
-    const uploadedFile = getUploadedFile(req);
-    if (!uploadedFile?.buffer) {
-      throw new AppError("CSV file upload is required", 400);
-    }
-
-    if (!isCsvUpload(uploadedFile)) {
-      throw new AppError("Uploaded file must be a CSV", 400);
-    }
-
-    const result = await processBulkTransfer({
-      organizationId,
-      senderUserId: userId,
-      fileContent: uploadedFile.buffer,
-      fileName: uploadedFile.originalname,
-    });
-
-    res.status(200).json({
-      job_id: result.jobId,
-      status: result.status,
-      message: "Bulk transfer processed successfully.",
-      success_count: result.successCount,
-      failure_count: result.failureCount,
-      skipped_count: result.skippedCount,
-      failure_report: result.failureReport,
-      result,
-    });
   } catch (e) {
     if (e instanceof AppError) {
       return next(e);
