@@ -5,10 +5,11 @@
  */
 import type { ConsumeMessage } from "amqplib";
 import { connectRabbitMQ, QUEUES } from "../config/rabbitmq";
-import { logger } from "../config/logger";
+import { logger, logFinancialEvent } from "../config/logger";
 import { prisma } from "../config/database";
 import { mintFromUsdcInternal } from "../controllers/mintController";
 import { fetchXlmRateUsd } from "../services/oracle/cryptoClient";
+import { randomUUID } from "crypto";
 
 const QUEUE = QUEUES.XLM_TO_ACBU;
 
@@ -30,7 +31,8 @@ export async function startXlmToAcbuConsumer(): Promise<void> {
       if (!msg) return;
       try {
         const body = JSON.parse(msg.content.toString()) as XlmToAcbuPayload;
-        await processXlmToAcbu(body);
+        const correlationId = randomUUID();
+        await processXlmToAcbu(body, correlationId);
         ch.ack(msg);
       } catch (e) {
         logger.error("XLM→ACBU job failed", { error: e });
@@ -47,6 +49,7 @@ export async function startXlmToAcbuConsumer(): Promise<void> {
  */
 export async function processXlmToAcbu(
   payload: XlmToAcbuPayload,
+  correlationId: string = randomUUID(),
 ): Promise<void> {
   const { onRampSwapId, userId, stellarAddress, xlmAmount, usdcEquivalent } =
     payload;
@@ -95,12 +98,35 @@ export async function processXlmToAcbu(
       acbuAmount,
       transactionId,
     });
+    logFinancialEvent({
+      event: "onramp.completed",
+      status: "success",
+      transactionId,
+      userId,
+      accountId: stellarAddress,
+      idempotencyKey: onRampSwapId,
+      amount: Math.round(xlmNum * 1e7), // XLM in stroops
+      currency: "XLM",
+      correlationId,
+    });
   } catch (e) {
     await prisma.onRampSwap.update({
       where: { id: onRampSwapId },
       data: { status: "failed" },
     });
     logger.error("XLM→ACBU mint failed", { onRampSwapId, error: e });
+    logFinancialEvent({
+      event: "onramp.failed",
+      status: "failed",
+      transactionId: onRampSwapId,
+      userId,
+      accountId: stellarAddress,
+      idempotencyKey: onRampSwapId,
+      amount: Math.round(xlmNum * 1e7), // XLM in stroops
+      currency: "XLM",
+      correlationId,
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
     throw e;
   }
 }
