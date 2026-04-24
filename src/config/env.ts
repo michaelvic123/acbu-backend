@@ -341,5 +341,5 @@ export const config = {
   },
 
   // CORS
-  corsOrigin: process.env.CORS_ORIGIN?.split(",") || ["*"],
+  corsOrigin: process.env.CORS_ORIGIN?.split(",") || [],
 };
