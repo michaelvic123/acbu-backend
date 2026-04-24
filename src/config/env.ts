@@ -252,10 +252,12 @@ export const config = {
       | "ses"
       | "log",
     emailFrom:
-      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.example.com",
+      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.io",
     sendgridApiKey: process.env.SENDGRID_API_KEY || "",
     sesRegion:
       process.env.AWS_REGION || process.env.AWS_SES_REGION || "us-east-1",
+    sesAccessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+    sesSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
     smsProvider: (process.env.NOTIFICATION_SMS_PROVIDER || "log") as
       | "twilio"
       | "africas_talking"
