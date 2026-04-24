@@ -149,20 +149,21 @@ export async function burnAcbu(
       req.apiKey?.organizationId ?? null,
     );
 
-    const createData = {
-      userId: req.apiKey?.userId ?? undefined,
-      type: "burn",
-      status:
-        burningEnabled && blockchain_tx_hash ? ("processing" as const) : "pending",
-      acbuAmountBurned: new Decimal(acbuNum),
-      localCurrency: currency,
-      localAmount: new Decimal(localNum),
-      recipientAccount: recipient_account as object,
-      fee: new Decimal(feeAcbu),
-      rateSnapshot: {
-        acbu_ngn: null,
-        organizationId: req.apiKey?.organizationId ?? null,
-        timestamp: new Date().toISOString(),
+    const tx = await prisma.transaction.create({
+      data: {
+        userId: req.apiKey?.userId ?? undefined,
+        organizationId: req.apiKey?.organizationId ?? undefined,
+        type: "burn",
+        status: "pending",
+        acbuAmountBurned: new Decimal(acbuNum),
+        localCurrency: currency,
+        localAmount: new Decimal(localNum),
+        recipientAccount: recipient_account as object,
+        fee: new Decimal(feeAcbu),
+        rateSnapshot: {
+          acbu_ngn: null,
+          timestamp: new Date().toISOString(),
+        },
       },
       blockchainTxHash:
         burningEnabled && blockchain_tx_hash ? blockchain_tx_hash : undefined,
