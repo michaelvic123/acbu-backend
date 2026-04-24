@@ -14,6 +14,22 @@ export interface AuditEntry {
   oldValue?: object;
   newValue?: object;
   performedBy?: string;
+  actorType?: string;
+  keyType?: "USER_KEY" | "ADMIN_KEY" | "BREAK_GLASS_KEY";
+  organizationId?: string;
+  reason?: string;
+}
+
+function validateAdminAttribution(entry: AuditEntry): void {
+  if (entry.keyType !== "ADMIN_KEY" && entry.keyType !== "BREAK_GLASS_KEY") {
+    return;
+  }
+
+  if (!entry.performedBy || !entry.actorType || !entry.organizationId || !entry.reason) {
+    throw new Error(
+      "Admin audit entries require performedBy, actorType, organizationId, and reason",
+    );
+  }
 }
 
 interface AuditPayload extends AuditEntry {
