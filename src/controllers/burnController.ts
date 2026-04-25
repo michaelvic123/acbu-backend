@@ -17,6 +17,7 @@ import {
   isCurrencyWithdrawalPaused,
 } from "../services/limits/limitsService";
 import { getBurnFeeBps } from "../services/feePolicy/feePolicyService";
+import { logFinancialEvent } from "../config/logger";
 
 const DECIMALS_7 = 1e7;
 
@@ -195,6 +196,21 @@ export async function burnAcbu(
       performedBy: req.apiKey?.userId ?? undefined,
     });
 
+    const burnCorrelationId =
+      (req.headers["x-request-id"] as string | undefined) ?? crypto.randomUUID();
+
+    logFinancialEvent({
+      event: "burn.initiated",
+      status: "pending",
+      transactionId: tx.id,
+      userId: req.apiKey?.userId ?? tx.id,
+      accountId: req.apiKey?.userId ?? tx.id,
+      idempotencyKey: blockchain_tx_hash ?? tx.id,
+      amount: Math.round(acbuNum * DECIMALS_7), // stroops
+      currency: "ACBU",
+      correlationId: burnCorrelationId,
+    });
+
     if (burningEnabled) {
       if (blockchain_tx_hash) {
         respondFromExistingBurnTx(res, tx, blockchain_tx_hash);
@@ -219,6 +235,18 @@ export async function burnAcbu(
             blockchainTxHash: result.transactionHash,
           },
         });
+        logFinancialEvent({
+          event: "burn.processing",
+          status: "pending",
+          transactionId: tx.id,
+          userId: req.apiKey?.userId ?? tx.id,
+          accountId: req.apiKey?.userId ?? tx.id,
+          idempotencyKey: blockchain_tx_hash ?? tx.id,
+          amount: Math.round(acbuNum * DECIMALS_7),
+          currency: "ACBU",
+          correlationId: burnCorrelationId,
+          providerRef: result.transactionHash,
+        });
         res.status(200).json({
           transaction_id: tx.id,
           acbu_amount: String(acbuNum),
@@ -235,6 +263,18 @@ export async function burnAcbu(
         await prisma.transaction.update({
           where: { id: tx.id },
           data: { status: "failed" },
+        });
+        logFinancialEvent({
+          event: "burn.failed",
+          status: "failed",
+          transactionId: tx.id,
+          userId: req.apiKey?.userId ?? tx.id,
+          accountId: req.apiKey?.userId ?? tx.id,
+          idempotencyKey: blockchain_tx_hash ?? tx.id,
+          amount: Math.round(acbuNum * DECIMALS_7),
+          currency: "ACBU",
+          correlationId: burnCorrelationId,
+          errorMessage: err instanceof Error ? err.message : String(err),
         });
         next(err);
         return;

@@ -23,6 +23,7 @@ import {
 import { enqueueUsdcConvertAndMint } from "../jobs/usdcConvertAndMintJob";
 import { AppError } from "../middleware/errorHandler";
 import { assertUserWalletAddress } from "../services/wallet/walletService";
+import { logFinancialEvent } from "../config/logger";
 
 const MINT_FEE_BPS = 30; // 0.3%
 const DECIMALS_7 = 1e7;
@@ -119,6 +120,7 @@ export async function mintFromUsdcInternal(
 ): Promise<{ transactionId: string; acbuAmount: number }> {
   const feeUsdc = (usdcAmount * MINT_FEE_BPS) / 10000;
   const usdcAmount7 = Math.round(usdcAmount * DECIMALS_7).toString();
+  const correlationId = crypto.randomUUID();
   const tx = await prisma.transaction.create({
     data: {
       userId: userId ?? undefined,
@@ -133,6 +135,19 @@ export async function mintFromUsdcInternal(
       },
     },
   });
+
+  logFinancialEvent({
+    event: "mint.initiated",
+    status: "pending",
+    transactionId: tx.id,
+    userId: userId ?? tx.id,
+    accountId: walletAddress,
+    idempotencyKey: tx.id,
+    amount: Math.round(usdcAmount * 100), // cents
+    currency: "USDC",
+    correlationId,
+  });
+
   const addresses = getContractAddresses();
   if (!addresses.minting) {
     await prisma.transaction.update({
@@ -175,6 +190,18 @@ export async function mintFromUsdcInternal(
         completedAt: new Date(),
       },
     });
+    logFinancialEvent({
+      event: "mint.completed",
+      status: "success",
+      transactionId: tx.id,
+      userId: userId ?? tx.id,
+      accountId: walletAddress,
+      idempotencyKey: tx.id,
+      amount: Math.round(usdcAmount * 100),
+      currency: "USDC",
+      correlationId,
+      providerRef: result.transactionHash,
+    });
     return { transactionId: tx.id, acbuAmount: acbuNum };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -185,6 +212,18 @@ export async function mintFromUsdcInternal(
         status: "failed",
         rateSnapshot: { error: message, at: new Date().toISOString() },
       },
+    });
+    logFinancialEvent({
+      event: "mint.failed",
+      status: "failed",
+      transactionId: tx.id,
+      userId: userId ?? tx.id,
+      accountId: walletAddress,
+      idempotencyKey: tx.id,
+      amount: Math.round(usdcAmount * 100),
+      currency: "USDC",
+      correlationId,
+      errorMessage: message,
     });
     throw err;
   }
