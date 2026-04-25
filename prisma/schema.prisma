@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ApiKeyType {
+  USER_KEY
+  ADMIN_KEY
+  BREAK_GLASS_KEY
+}
+
 model Organization {
   id              String           @id @default(uuid()) @db.Uuid
   name            String?          @db.VarChar(255)
@@ -249,6 +255,8 @@ model AuditTrail {
   @@index([eventType], map: "idx_audit_trail_event_type")
   @@index([entityType], map: "idx_audit_trail_entity_type")
   @@index([entityId], map: "idx_audit_trail_entity_id")
+  @@index([actorType, timestamp], map: "idx_audit_trail_actor_type_timestamp")
+  @@index([organizationId, timestamp], map: "idx_audit_trail_org_timestamp")
   @@index([timestamp], map: "idx_audit_trail_timestamp")
   @@map("audit_trail")
 }

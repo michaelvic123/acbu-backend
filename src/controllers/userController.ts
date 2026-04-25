@@ -542,7 +542,7 @@ export async function deleteGuardian(
 
 /**
  * DELETE /users/me
- * Delete account: revoke API keys, set Transaction.userId = null, then delete user.
+ * Delete account: performs a tombstone delete for GDPR compliance.
  */
 export async function deleteMe(
   req: AuthRequest,
@@ -552,14 +552,39 @@ export async function deleteMe(
   try {
     const userId = req.apiKey?.userId;
     if (!userId) throw new AppError("User-scoped API key required", 401);
-    await prisma.$transaction([
-      prisma.transaction.updateMany({
-        where: { userId },
-        data: { userId: null },
-      }),
-      prisma.apiKey.deleteMany({ where: { userId } }),
-      prisma.user.delete({ where: { id: userId } }),
-    ]);
+
+    await prisma.$transaction(async (tx: any) => {
+      // 1. Delete associated sensitive records
+      await tx.apiKey.deleteMany({ where: { userId } });
+      await tx.otpChallenge.deleteMany({ where: { userId } });
+      await tx.userPasskey.deleteMany({ where: { userId } });
+      await tx.userContact.deleteMany({ where: { userId } });
+      await tx.userContact.deleteMany({ where: { contactUserId: userId } });
+      await tx.guardian.deleteMany({ where: { userId } });
+      await tx.guardian.deleteMany({ where: { guardianUserId: userId } });
+
+      // 2. Tombstone the User record
+      const tombstoneSuffix = crypto.randomUUID().substring(0, 8);
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          username: `deleted_${tombstoneSuffix}`,
+          email: null,
+          phoneE164: null,
+          stellarAddress: null,
+          kycStatus: "deleted",
+          encryptedStellarSecret: null,
+          keyEncryptionHint: null,
+          passcodeHash: null,
+          twoFaMethod: null,
+          totpSecretEncrypted: null,
+          privacyHideFromSearch: true,
+        },
+      });
+    });
+
+    logger.info("Account tombstone deleted (legacy endpoint)", { userId });
+
     res.status(204).send();
   } catch (e) {
     next(e);

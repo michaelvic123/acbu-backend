@@ -21,51 +21,85 @@ import { AppError } from "../middleware/errorHandler";
 import { reconcileBillsWebhook } from "../services/bills";
 import type { FinancialEventStatus } from "../types/logging";
 
+// ── Dev/stage mock bypass ────────────────────────────────────────────────────
+// When WEBHOOK_SIGNATURE_BYPASS=true AND NODE_ENV is not production,
+// signature verification is skipped entirely. This allows local development
+// and CI environments to send test payloads without real secrets.
+// Never set this variable in production — the boot guard in env.ts will
+// reject a missing secret before this code is even reached.
+const isDev = config.nodeEnv !== "production";
+const bypassEnabled =
+  isDev && process.env.WEBHOOK_SIGNATURE_BYPASS === "true";
+
+if (bypassEnabled) {
+  logger.warn(
+    "WEBHOOK_SIGNATURE_BYPASS is enabled — webhook signature verification " +
+      "is DISABLED. This must never be set in production.",
+  );
+}
+
+// ── Flutterwave Webhook ──────────────────────────────────────────────────────
+
 export function verifyFlutterwaveSignature(
   req: Request & { rawBody?: Buffer },
   res: Response,
   next: NextFunction,
 ): void {
+  // Dev/stage explicit bypass — never reachable in production because env.ts
+  // throws before the server starts when FLUTTERWAVE_WEBHOOK_SECRET is unset.
+  if (bypassEnabled) {
+    logger.warn("Flutterwave webhook signature check bypassed (dev/stage)");
+    next();
+    return;
+  }
+
   const secret = config.flutterwave.webhookSecret;
   if (!secret) {
+    // Should never be reached in production due to boot guard in env.ts.
+    // Guards against any future refactor that removes that check.
     logger.error(
       "FLUTTERWAVE_WEBHOOK_SECRET is not configured — rejecting webhook. " +
         "Set the environment variable to accept Flutterwave webhooks.",
     );
-    res.status(503).json({
-      error: "Webhook verification unavailable: secret not configured",
-    });
-    return;
+    throw new AppError(
+      "Webhook verification unavailable: secret not configured",
+      503,
+      "CONFIG_ERROR",
+    );
+
   }
+
   const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
   if (!rawBody || !Buffer.isBuffer(rawBody)) {
-    res.status(400).json({ error: "Raw body required for verification" });
-    return;
+    throw new AppError("Raw body required for verification", 400, "BAD_REQUEST");
   }
+
   const received = req.headers["verif-hash"] as string | undefined;
   if (!received) {
-    res.status(401).json({ error: "Missing verif-hash header" });
-    return;
+    throw new AppError("Missing verif-hash header", 401, "UNAUTHORIZED");
   }
+
   const computed = crypto
     .createHmac("sha256", secret)
     .update(rawBody)
     .digest("hex");
-  try {
-    if (
-      crypto.timingSafeEqual(
-        Buffer.from(received, "hex"),
-        Buffer.from(computed, "hex"),
-      )
-    ) {
-      next();
-      return;
+
+  // Normalise to equal-length buffers before timingSafeEqual to prevent
+  // length-leaking side channels. A mismatched length still fails below.
+  const receivedBuf = Buffer.from(received, "hex");
+  const computedBuf = Buffer.from(computed, "hex");
+
+  let signatureValid = false;
+  if (receivedBuf.length === computedBuf.length) {
+    try {
+      signatureValid = crypto.timingSafeEqual(receivedBuf, computedBuf);
+    } catch {
+      // timingSafeEqual throws on length mismatch — belt-and-suspenders.
+      signatureValid = false;
     }
-  } catch {
-    // length mismatch etc.
   }
   logger.warn("Flutterwave webhook signature mismatch");
-  res.status(401).json({ error: "Invalid signature" });
+  throw new AppError("Invalid signature", 401, "UNAUTHORIZED");
 }
 
 // ── Paystack Webhook ────────────────────────────────────────────────────────
@@ -79,37 +113,65 @@ export function verifyPaystackSignature(
   res: Response,
   next: NextFunction,
 ): void {
+  // Dev/stage explicit bypass — never reachable in production because env.ts
+  // throws before the server starts when PAYSTACK_SECRET_KEY is unset.
+  if (bypassEnabled) {
+    logger.warn("Paystack webhook signature check bypassed (dev/stage)");
+    next();
+    return;
+  }
+
   const secret = config.paystack.secretKey;
   if (!secret) {
+    // Should never be reached in production due to boot guard in env.ts.
     logger.error(
       "PAYSTACK_SECRET_KEY is not configured — rejecting webhook. " +
         "Set the environment variable to accept Paystack webhooks.",
     );
-    res.status(503).json({
-      error: "Webhook verification unavailable: secret not configured",
-    });
-    return;
+    throw new AppError(
+      "Webhook verification unavailable: secret not configured",
+      503,
+      "CONFIG_ERROR",
+    );
+
   }
+
   const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
   if (!rawBody || !Buffer.isBuffer(rawBody)) {
-    res.status(400).json({ error: "Raw body required for verification" });
-    return;
+    throw new AppError("Raw body required for verification", 400, "BAD_REQUEST");
   }
+
   const received = req.headers["x-paystack-signature"] as string | undefined;
   if (!received) {
-    res.status(401).json({ error: "Missing x-paystack-signature header" });
-    return;
+    throw new AppError("Missing x-paystack-signature header", 401, "UNAUTHORIZED");
   }
+
   const computed = crypto
     .createHmac("sha512", secret)
     .update(rawBody)
     .digest("hex");
-  if (computed === received) {
-    next();
+
+  // Use timing-safe comparison (same pattern as Flutterwave above) to prevent
+  // timing side-channel attacks. Paystack previously used string equality (===).
+  const receivedBuf = Buffer.from(received, "hex");
+  const computedBuf = Buffer.from(computed, "hex");
+
+  let signatureValid = false;
+  if (receivedBuf.length === computedBuf.length) {
+    try {
+      signatureValid = crypto.timingSafeEqual(receivedBuf, computedBuf);
+    } catch {
+      signatureValid = false;
+    }
+  }
+
+  if (!signatureValid) {
+    logger.warn("Paystack webhook signature mismatch");
+    res.status(401).json({ error: "Invalid signature" });
     return;
   }
   logger.warn("Paystack webhook signature mismatch");
-  res.status(401).json({ error: "Invalid signature" });
+  throw new AppError("Invalid signature", 401, "UNAUTHORIZED");
 }
 
 /**

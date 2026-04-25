@@ -156,16 +156,14 @@ export const config = {
     nativeAssetCode: ((): string => {
       const explicit = process.env.STELLAR_NATIVE_ASSET_CODE?.trim();
       if (explicit) return explicit.toUpperCase();
-      const bootstrapProfile = (
-        process.env.TESTNET_CUSTODIAL_BOOTSTRAP || ""
-      ).trim()
+      const bootstrapProfile = (process.env.TESTNET_CUSTODIAL_BOOTSTRAP || "")
+        .trim()
         .toLowerCase();
       return bootstrapProfile.includes("pi") ? "PI" : "XLM";
     })(),
     /** Wallet activation strategy. Default keeps the current create-account path, but makes it explicit/configurable. */
-    activationStrategy: (
-      process.env.WALLET_ACTIVATION_STRATEGY || "create_account_native"
-    ) as "create_account_native" | "disabled",
+    activationStrategy: (process.env.WALLET_ACTIVATION_STRATEGY ||
+      "create_account_native") as "create_account_native" | "disabled",
     /** Optional bootstrap profile from deployment docs/runbooks; used only for config alignment and diagnostics. */
     bootstrapProfile: process.env.TESTNET_CUSTODIAL_BOOTSTRAP || "",
     /** Minimum network-native balance sent to user wallet for activation. */
@@ -193,6 +191,16 @@ export const config = {
     baseFeeStroops: parseInt(process.env.STELLAR_BASE_FEE_STROOPS || "100", 10),
     /** When true, fetches the current recommended base fee from Horizon before each transaction. Falls back to baseFeeStroops on failure. */
     useDynamicFees: process.env.STELLAR_USE_DYNAMIC_FEES === "true",
+    /** Maximum total fee per Soroban transaction in stroops (base + resource fees). Default 10M stroops (~50 XLM at base fee 100). */
+    sorobanMaxFeeStroops: parseInt(
+      process.env.STELLAR_SOROBAN_MAX_FEE_STROOPS || "10000000",
+      10,
+    ),
+    /** Minimum total fee per Soroban transaction in stroops to prevent underpricing. Default 5000 stroops. */
+    sorobanMinFeeStroops: parseInt(
+      process.env.STELLAR_SOROBAN_MIN_FEE_STROOPS || "5000",
+      10,
+    ),
     /** Circle USDC issuer on Stellar testnet. Default is the well-known Circle testnet issuer. */
     usdcIssuerTestnet:
       process.env.USDC_ISSUER_TESTNET ??
@@ -345,6 +353,16 @@ export const config = {
         process.env.LIMIT_CIRCUIT_BREAKER_MIN_RATIO || "1.02",
       ),
     },
+  },
+
+  // Auth Security
+  auth: {
+    bruteMaxAttempts: parseInt(process.env.AUTH_BRUTE_MAX_ATTEMPTS || "5", 10),
+    bruteLockoutMs: parseInt(
+      process.env.AUTH_BRUTE_LOCKOUT_MS || "900000",
+      10,
+    ), // 15 mins
+    captchaSecret: process.env.CAPTCHA_SECRET || "",
   },
 
   // CORS
