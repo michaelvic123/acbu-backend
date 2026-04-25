@@ -49,6 +49,7 @@ export const config = {
   mongodbUri: env.MONGODB_URI,
   rabbitmqUrl: env.RABBITMQ_URL,
   jwtSecret: env.JWT_SECRET,
+  challengeTokenSecret: process.env.CHALLENGE_TOKEN_SECRET || 'default_secret',
   jwtExpiresIn: env.JWT_EXPIRES_IN,
   jwtClockToleranceSeconds: env.JWT_CLOCK_TOLERANCE_SECONDS,
   challengeTokenSecret: env.CHALLENGE_TOKEN_SECRET || env.JWT_SECRET,
@@ -264,10 +265,12 @@ export const config = {
       | "ses"
       | "log",
     emailFrom:
-      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.example.com",
+      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.io",
     sendgridApiKey: process.env.SENDGRID_API_KEY || "",
     sesRegion:
       process.env.AWS_REGION || process.env.AWS_SES_REGION || "us-east-1",
+    sesAccessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+    sesSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
     smsProvider: (process.env.NOTIFICATION_SMS_PROVIDER || "log") as
       | "twilio"
       | "africas_talking"
@@ -363,37 +366,5 @@ export const config = {
   },
 
   // CORS
-  corsOrigin: process.env.CORS_ORIGIN?.split(",") || ["*"],
-
-  // S3 / KYC document storage (B-062)
-  s3: {
-    bucket: process.env.AWS_S3_KYC_BUCKET || "",
-    region: process.env.AWS_REGION || process.env.AWS_S3_REGION || "us-east-1",
-    /** Optional: override endpoint for local MinIO / S3-compatible stores. */
-    endpoint: process.env.AWS_S3_ENDPOINT || "",
-    /** Explicit credentials — falls back to IAM role / env chain if not set. */
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
-    /**
-     * Upload URL TTL in seconds. Default 900 (15 min).
-     * Keep short to limit the window for presigned URL abuse.
-     */
-    uploadUrlTtlSeconds: parseInt(
-      process.env.S3_UPLOAD_URL_TTL_SECONDS || "900",
-      10,
-    ),
-    /**
-     * Download URL TTL in seconds. Default 300 (5 min).
-     * Shorter than upload — read-once pattern recommended.
-     */
-    downloadUrlTtlSeconds: parseInt(
-      process.env.S3_DOWNLOAD_URL_TTL_SECONDS || "300",
-      10,
-    ),
-    /**
-     * Shared secret used to authenticate the virus-scan webhook callback.
-     * Must be set in production.
-     */
-    scanWebhookSecret: process.env.S3_SCAN_WEBHOOK_SECRET || "",
-  },
+  corsOrigin: process.env.CORS_ORIGIN?.split(",") || [],
 };
