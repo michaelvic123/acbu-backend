@@ -95,18 +95,33 @@ async function processNotification(
     }
 
     if (organizationId) {
-      const orgUsers = await prisma.user.findMany({
+      const apiKeys = await prisma.apiKey.findMany({
         where: { organizationId },
-        select: { email: true, phoneE164: true },
+        select: { userId: true, permissions: true },
       });
-      for (const user of orgUsers) {
-        if (user.email)
-          await sendEmail(
-            user.email,
-            "Organization investment withdrawal is ready",
-            body,
-          );
-        if (user.phoneE164) await sendSms(user.phoneE164, body);
+      const adminUserIds = new Set<string>();
+      for (const key of apiKeys) {
+        if (key.userId && Array.isArray(key.permissions)) {
+          if (key.permissions.some((p: any) => typeof p === "string" && p.endsWith(":admin"))) {
+            adminUserIds.add(key.userId);
+          }
+        }
+      }
+
+      if (adminUserIds.size > 0) {
+        const orgAdmins = await prisma.user.findMany({
+          where: { id: { in: Array.from(adminUserIds) } },
+          select: { email: true, phoneE164: true },
+        });
+        for (const admin of orgAdmins) {
+          if (admin.email)
+            await sendEmail(
+              admin.email,
+              "Organization investment withdrawal is ready",
+              body,
+            );
+          if (admin.phoneE164) await sendSms(admin.phoneE164, body);
+        }
       }
     }
     return;
