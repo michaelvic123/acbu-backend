@@ -39,6 +39,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Audit dependencies for critical vulnerabilities
+        run: |
+          pnpm audit --json > audit.json || true
+          node <<'NODE'
+          const fs = require('fs');
+          const audit = JSON.parse(fs.readFileSync('audit.json', 'utf8'));
+          const metadataCritical = audit.metadata?.vulnerabilities?.critical;
+          const vulnList = audit.vulnerabilities || {};
+          const advisoryCritical = Object.values(vulnList).filter(v => v.severity === 'critical').length;
+          const criticalCount = metadataCritical ?? advisoryCritical;
+          if (criticalCount > 0) {
+            console.error(`Critical vulnerabilities found: ${criticalCount}`);
+            process.exit(1);
+          }
+          console.log('No critical vulnerabilities found.');
+          NODE
+
       - name: Lint
         run: pnpm run lint
 

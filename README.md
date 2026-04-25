@@ -167,6 +167,12 @@ pnpm test:coverage
 
 **Stellar:** `STELLAR_NETWORK`, `STELLAR_SECRET_KEY`, and after deploy: `CONTRACT_ORACLE`, `CONTRACT_RESERVE_TRACKER`, `CONTRACT_MINTING`, `CONTRACT_BURNING`. Optional for segment features: `CONTRACT_SAVINGS_VAULT`, `CONTRACT_LENDING_POOL`, `CONTRACT_ESCROW`.
 
+**Stellar Fee Configuration:** Control transaction fees under varying network congestion:
+- `STELLAR_USE_DYNAMIC_FEES=true` - Fetch live base fee from Horizon before each transaction (recommended for production)
+- `STELLAR_BASE_FEE_STROOPS=100` - Fallback base fee when dynamic fetch unavailable (default: 100)
+- `STELLAR_SOROBAN_MIN_FEE_STROOPS=5000` - Minimum total fee for Soroban transactions to prevent underpricing (default: 5000)
+- `STELLAR_SOROBAN_MAX_FEE_STROOPS=10000000` - Maximum total fee for Soroban transactions to prevent overpaying (~50 XLM at base=100; default: 10M stroops)
+
 ## Docker Services
 
 With **Prisma Accelerate** and **MongoDB Atlas**, the app does not use local PostgreSQL or MongoDB. Only RabbitMQ is required from Docker (or use a managed RabbitMQ). The compose file also defines optional `postgres` and `mongodb` services for migrations or local development.
@@ -187,6 +193,52 @@ docker-compose down
 
 ```bash
 docker-compose logs -f
+```
+
+## Health Check Endpoints
+
+The API provides three health check endpoints with different purposes:
+
+### `/health` - Shallow Liveness Check
+- **Path:** `GET /api/v1/health`
+- **Status:** Always returns `200 OK`
+- **Purpose:** For load balancers to verify the process is alive
+- **Response:** `{ status: "ok", timestamp, uptime, version }`
+- **Note:** Does not probe dependencies; fast and reliable
+
+### `/health/ready` - Kubernetes Readiness Probe
+- **Path:** `GET /api/v1/health/ready`
+- **Status:** Returns `200` if all dependencies up, `503` if any down
+- **Purpose:** For Kubernetes readinessProbe configurations
+- **Probes:** PostgreSQL, MongoDB, RabbitMQ
+- **Recommendation:** Use this endpoint in K8s deployment readinessProbe
+
+### `/health/deep` - Deep Health Check
+- **Path:** `GET /api/v1/health/deep`
+- **Status:** Returns `200` if all dependencies up, `503` if any down
+- **Purpose:** Detailed dependency status for monitoring dashboards
+- **Response:** Full report with status of each dependency
+
+### Kubernetes Configuration Example
+
+```yaml
+readinessProbe:
+  httpGet:
+    path: /api/v1/health/ready
+    port: 5000
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: 5000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
 ```
 
 ## CI/CD
