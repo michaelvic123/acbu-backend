@@ -15,3 +15,4 @@ export {
   type YieldCredit,
   type YieldSource,
 } from "./yieldAccountingService";
+export { accrueFromStrategies } from "./yieldAccountingService";
