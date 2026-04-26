@@ -144,13 +144,18 @@ function validateAdminScopes(scopes: string[]): PermissionScope[] {
     const invalid = parsed.error.errors.map((e) => e.message).join(", ");
     throw new Error(`Invalid permission scope(s): ${invalid}`);
   }
-  const adminOnly = parsed.data.filter((s) =>
-    (ADMIN_SCOPES as readonly string[]).includes(s),
+  const nonAdmin = parsed.data.filter(
+    (s) => !(ADMIN_SCOPES as readonly string[]).includes(s),
   );
-  if (adminOnly.length === 0) {
+  if (nonAdmin.length > 0) {
+    throw new Error(
+      `Non-admin scopes are not permitted on admin keys: ${nonAdmin.join(", ")}`,
+    );
+  }
+  if (parsed.data.length === 0) {
     throw new Error("At least one admin scope is required");
   }
-  return adminOnly;
+  return parsed.data as PermissionScope[];
 }
 
 async function publishOtp(channel: "sms" | "email", to: string, code: string) {

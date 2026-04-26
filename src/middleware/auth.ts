@@ -4,7 +4,11 @@ import bcrypt from "bcryptjs";
 import { AppError } from "./errorHandler";
 import { logger } from "../config/logger";
 import jwt from "jsonwebtoken";
-import { PermissionsArraySchema, PermissionScope } from "../types/permissions";
+import {
+  PermissionScopeEnum,
+  PermissionsArraySchema,
+  PermissionScope,
+} from "../types/permissions";
 
 export type Audience = "retail" | "business" | "government";
 export type UserTier = "free" | "verified" | "sme" | "enterprise";
@@ -41,15 +45,27 @@ export interface AuthRequest extends Request {
  * @returns Array of validated permission strings, or empty array if invalid
  */
 function validatePermissions(permissions: unknown): PermissionScope[] {
-  const result = PermissionsArraySchema.safeParse(permissions);
-  if (!result.success) {
-    logger.warn("Invalid permissions in API key record", {
-      raw: permissions,
-      errors: result.error.flatten().fieldErrors,
-    });
+  if (!Array.isArray(permissions)) {
+    if (permissions != null) {
+      logger.warn("Invalid permissions in API key record (not an array)", {
+        raw: permissions,
+      });
+    }
     return [];
   }
-  return result.data;
+  const valid: PermissionScope[] = [];
+  const invalid: unknown[] = [];
+  for (const p of permissions) {
+    const r = PermissionScopeEnum.safeParse(p);
+    if (r.success) valid.push(r.data);
+    else invalid.push(p);
+  }
+  if (invalid.length > 0) {
+    logger.warn("Dropped invalid permission scopes from API key record", {
+      invalid,
+    });
+  }
+  return valid;
 }
 
 function parseApiKey(
