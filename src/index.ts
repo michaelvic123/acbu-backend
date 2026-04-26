@@ -164,6 +164,10 @@ async function startServer() {
         await import("./jobs/investmentWithdrawalJob");
       await startInvestmentWithdrawalScheduler();
 
+      // Start yield accrual scheduler (run once at startup to seed accruals)
+      const { startYieldAccrualScheduler } = await import("./jobs/yieldAccrualJob");
+      await startYieldAccrualScheduler();
+
       // Salary schedule: trigger recurring salary payments
       const { startSalaryScheduleScheduler } =
         await import("./jobs/salaryScheduleJob");
