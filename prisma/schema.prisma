@@ -226,6 +226,18 @@ model BasketConfig {
   @@map("basket_config")
 }
 
+/// Runtime-tunable operational limits. Values are partial JSON overrides over env/default limits.
+model LimitConfig {
+  id        String   @id @default(uuid()) @db.Uuid
+  scope     String   @unique @db.VarChar(32) // retail | business | government | circuit_breaker
+  values    Json     @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@index([updatedAt], map: "idx_limit_config_updated_at")
+  @@map("limits_config")
+}
+
 model RebalancingEvent {
   id          String    @id @default(uuid()) @db.Uuid
   type        String    @db.VarChar(20)
@@ -567,47 +579,4 @@ model InvestmentStrategy {
   @@index([status], map: "idx_investment_strategies_status")
   @@index([riskTier], map: "idx_investment_strategies_risk_tier")
   @@map("investment_strategies")
-}
-
-model SalaryItem {
-  id               String   @id @default(uuid()) @db.Uuid
-  batchId          String   @map("batch_id") @db.Uuid
-  recipientId      String?  @map("recipient_id") @db.Uuid
-  recipientAddress String   @map("recipient_address") @db.VarChar(56)
-  amount           Decimal  @db.Decimal(20, 8)
-  status           String   @default("pending") @db.VarChar(20)
-  transactionId    String?  @unique @map("transaction_id") @db.Uuid
-  errorMessage     String?  @map("error_message") @db.Text
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
-
-  batch       SalaryBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  transaction Transaction? @relation(fields: [transactionId], references: [id])
-
-  @@index([batchId], map: "idx_salary_item_batch_id")
-  @@index([status], map: "idx_salary_item_status")
-  @@map("salary_items")
-}
-
-model SalarySchedule {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String?   @map("organization_id") @db.Uuid
-  userId         String    @map("user_id") @db.Uuid
-  name           String    @db.VarChar(100)
-  cron           String    @db.VarChar(100)
-  amountConfig   Json      @map("amount_config")
-  currency       String    @default("ACBU") @db.VarChar(10)
-  status         String    @default("active") @db.VarChar(20)
-  lastRunAt      DateTime? @map("last_run_at") @db.Timestamp(6)
-  nextRunAt      DateTime? @map("next_run_at") @db.Timestamp(6)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
-
-  organization Organization? @relation(fields: [organizationId], references: [id])
-  user         User          @relation(fields: [userId], references: [id])
-
-  @@index([organizationId], map: "idx_salary_schedule_org_id")
-  @@index([status], map: "idx_salary_schedule_status")
-  @@index([nextRunAt], map: "idx_salary_schedule_next_run")
-  @@map("salary_schedules")
 }
