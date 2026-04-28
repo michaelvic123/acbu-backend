@@ -60,11 +60,10 @@ app.use(requestLogger);
 // Rate limiting
 app.use(standardRateLimiter);
 
-// Versioning headers (X-API-Version, Deprecation, Sunset)
-app.use(versioningMiddleware);
-
-// API Documentation
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// API Documentation (disabled in production for security)
+if (config.nodeEnv !== "production") {
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 // Routes
 app.use(`/api/${config.apiVersion}`, routes);
@@ -165,6 +164,10 @@ async function startServer() {
         await import("./jobs/investmentWithdrawalJob");
       await startInvestmentWithdrawalScheduler();
 
+      // Start yield accrual scheduler (run once at startup to seed accruals)
+      const { startYieldAccrualScheduler } = await import("./jobs/yieldAccrualJob");
+      await startYieldAccrualScheduler();
+
       // Salary schedule: trigger recurring salary payments
       const { startSalaryScheduleScheduler } =
         await import("./jobs/salaryScheduleJob");
@@ -195,9 +198,11 @@ async function startServer() {
       logger.info(`Server running on port ${config.port}`);
       logger.info(`Environment: ${config.nodeEnv}`);
       logger.info(`API Version: ${config.apiVersion}`);
-      logger.info(
-        `API Documentation: http://localhost:${config.port}/api-docs`,
-      );
+      if (config.nodeEnv !== "production") {
+        logger.info(
+          `API Documentation: http://localhost:${config.port}/api-docs`,
+        );
+      }
     });
   } catch (error) {
     logger.error("Failed to start server", error);

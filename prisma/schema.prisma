@@ -7,12 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum ApiKeyType {
-  USER_KEY
-  ADMIN_KEY
-  BREAK_GLASS_KEY
-}
-
 model Organization {
   id            String    @id @default(uuid()) @db.Uuid
   name          String?   @db.VarChar(255)
@@ -26,7 +20,6 @@ model Organization {
   transactions    Transaction[] @relation("OrganizationTransactions")
   salaryBatches   SalaryBatch[]
   salarySchedules SalarySchedule[]
-  bulkTransferJobs BulkTransferJob[]
 
   @@index([kycStatus], name: "idx_organization_kyc_status")
   @@map("organizations")
@@ -95,7 +88,6 @@ model Transaction {
   fee                   Decimal?                @db.Decimal(20, 8)
   rateSnapshot          Json?                   @map("rate_snapshot")
   blockchainTxHash      String?                 @map("blockchain_tx_hash") @db.VarChar(255)
-  idempotencyKey        String?                 @unique @map("idempotency_key") @db.VarChar(255)
   confirmations         Int                     @default(0)
   createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamp(6)
   completedAt           DateTime?               @map("completed_at") @db.Timestamp(6)
@@ -229,6 +221,18 @@ model BasketConfig {
   @@map("basket_config")
 }
 
+/// Runtime-tunable operational limits. Values are partial JSON overrides over env/default limits.
+model LimitConfig {
+  id        String   @id @default(uuid()) @db.Uuid
+  scope     String   @unique @db.VarChar(32) // retail | business | government | circuit_breaker
+  values    Json     @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@index([updatedAt], map: "idx_limit_config_updated_at")
+  @@map("limits_config")
+}
+
 model RebalancingEvent {
   id          String    @id @default(uuid()) @db.Uuid
   type        String    @db.VarChar(20)
@@ -257,8 +261,6 @@ model AuditTrail {
   @@index([eventType], map: "idx_audit_trail_event_type")
   @@index([entityType], map: "idx_audit_trail_entity_type")
   @@index([entityId], map: "idx_audit_trail_entity_id")
-  @@index([actorType, timestamp], map: "idx_audit_trail_actor_type_timestamp")
-  @@index([organizationId, timestamp], map: "idx_audit_trail_org_timestamp")
   @@index([timestamp], map: "idx_audit_trail_timestamp")
   @@map("audit_trail")
 }

@@ -16,10 +16,10 @@ importers:
         version: 3.975.0
       '@prisma/client':
         specifier: ^5.19.0
-        version: 5.22.0(prisma@5.22.0)
+        version: 5.19.0(prisma@5.19.0)
       '@prisma/extension-accelerate':
         specifier: ^3.0.1
-        version: 3.0.1(@prisma/client@5.22.0(prisma@5.22.0))
+        version: 3.0.1(@prisma/client@5.19.0(prisma@5.19.0))
       '@stellar/stellar-sdk':
         specifier: ^15.0.1
         version: 15.0.1
@@ -89,12 +89,6 @@ importers:
       otplib:
         specifier: ^12.0.1
         version: 12.0.1
-      papaparse:
-        specifier: ^5.5.3
-        version: 5.5.3
-      prisma:
-        specifier: ^5.19.0
-        version: 5.22.0
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -120,9 +114,6 @@ importers:
       '@types/jest':
         specifier: ^29.5.11
         version: 29.5.14
-      '@types/papaparse':
-        specifier: ^5.5.2
-        version: 5.5.2
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.59.0
         version: 8.59.0(@typescript-eslint/parser@8.59.0(eslint@8.57.1)(typescript@5.9.3))(eslint@8.57.1)(typescript@5.9.3)
@@ -153,9 +144,6 @@ importers:
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@20.19.39)(typescript@5.9.3)
-      zod-to-json-schema:
-        specifier: ^3.25.2
-        version: 3.25.2(zod@3.25.76)
 
 packages:
 
@@ -1069,9 +1057,6 @@ packages:
   '@types/node@20.19.39':
     resolution: {integrity: sha512-orrrD74MBUyK8jOAD/r0+lfa1I2MO6I+vAkmAWzMYbCcgrN4lCrmK52gRFQq/JRxfYPfonkr4b0jcY7Olqdqbw==}
 
-  '@types/papaparse@5.5.2':
-    resolution: {integrity: sha512-gFnFp/JMzLHCwRf7tQHrNnfhN4eYBVYYI897CGX4MY1tzY9l2aLkVyx2IlKZ/SAqDbB3I1AOZW5gTMGGsqWliA==}
-
   '@types/qrcode@1.5.6':
     resolution: {integrity: sha512-te7NQcV2BOvdj2b1hCAHzAoMNuj65kNBMz0KBaxM6c3VGBOhU0dURQKOtH8CFNI/dsKkwlv32p26qYQTWoB5bw==}
 
@@ -1865,7 +1850,7 @@ packages:
 
   glob@7.1.6:
     resolution: {integrity: sha512-LwaxwyZ72Lk7vZINtNNrywX0ZuLyStrdDtabefZKAY5ZGJhVtgdznluResxNmPitE0SAO+O26sWTHeKSI2wMBA==}
-    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+    deprecated: Glob versions prior to v9 are no longer supported
 
   glob@7.2.3:
     resolution: {integrity: sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q==}
@@ -2504,9 +2489,6 @@ packages:
   p-try@2.2.0:
     resolution: {integrity: sha512-R4nPAVTAU0B9D35/Gk3uJf/7XYbQcyohSKdvAxIRSNghFl4e71hVoGnBNQz9cWaXxO2I10KTC+3jMdvvoKw6dQ==}
     engines: {node: '>=6'}
-
-  papaparse@5.5.3:
-    resolution: {integrity: sha512-5QvjGxYVjxO59MGU2lHVYpRWBBtKHnlIAcSe1uNFCkkptUh63NFRj0FJQm7nR67puEruUci/ZkjmEFrjCAyP4A==}
 
   parent-module@1.0.1:
     resolution: {integrity: sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==}
@@ -3167,11 +3149,6 @@ packages:
     engines: {node: '>=8.0.0'}
     hasBin: true
 
-  zod-to-json-schema@3.25.2:
-    resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
-    peerDependencies:
-      zod: ^3.25.28 || ^4
-
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
@@ -3679,6 +3656,16 @@ snapshots:
       '@smithy/property-provider': 4.2.8
       '@smithy/shared-ini-file-loader': 4.4.3
       '@smithy/types': 4.12.0
+      '@smithy/url-parser': 4.2.8
+      '@smithy/util-base64': 4.3.0
+      '@smithy/util-body-length-browser': 4.2.0
+      '@smithy/util-body-length-node': 4.2.1
+      '@smithy/util-defaults-mode-browser': 4.3.26
+      '@smithy/util-defaults-mode-node': 4.2.29
+      '@smithy/util-endpoints': 3.2.8
+      '@smithy/util-middleware': 4.2.8
+      '@smithy/util-retry': 4.2.8
+      '@smithy/util-utf8': 4.2.0
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
@@ -3726,6 +3713,8 @@ snapshots:
       '@smithy/types': 4.12.0
       bowser: 2.13.1
       tslib: 2.8.1
+    transitivePeerDependencies:
+      - aws-crt
 
   '@aws-sdk/util-user-agent-node@3.972.2':
     dependencies:
@@ -4500,6 +4489,8 @@ snapshots:
 
   '@smithy/types@4.12.0':
     dependencies:
+      '@smithy/querystring-parser': 4.2.8
+      '@smithy/types': 4.12.0
       tslib: 2.8.1
 
   '@smithy/url-parser@4.2.8':
@@ -4742,10 +4733,6 @@ snapshots:
   '@types/node@20.19.39':
     dependencies:
       undici-types: 6.21.0
-
-  '@types/papaparse@5.5.2':
-    dependencies:
-      '@types/node': 20.19.30
 
   '@types/qrcode@1.5.6':
     dependencies:
@@ -6389,8 +6376,6 @@ snapshots:
 
   p-try@2.2.0: {}
 
-  papaparse@5.5.3: {}
-
   parent-module@1.0.1:
     dependencies:
       callsites: 3.1.0
@@ -6444,9 +6429,9 @@ snapshots:
       ansi-styles: 5.2.0
       react-is: 18.3.1
 
-  prisma@5.22.0:
+  prisma@5.19.0:
     dependencies:
-      '@prisma/engines': 5.22.0
+      '@prisma/engines': 5.19.0
     optionalDependencies:
       fsevents: 2.3.3
 
@@ -7025,9 +7010,5 @@ snapshots:
       validator: 13.15.26
     optionalDependencies:
       commander: 9.5.0
-
-  zod-to-json-schema@3.25.2(zod@3.25.76):
-    dependencies:
-      zod: 3.25.76
 
   zod@3.25.76: {}

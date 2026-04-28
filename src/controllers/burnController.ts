@@ -84,7 +84,10 @@ export async function burnAcbu(
   try {
     const parsed = bodySchema.safeParse(req.body);
     if (!parsed.success) {
-      throw new AppError("Invalid request", 400, "VALIDATION_ERROR", parsed.error.flatten());
+      res
+        .status(400)
+        .json({ error: "Invalid request", details: parsed.error.flatten() });
+      return;
     }
     const { acbu_amount, currency, recipient_account, blockchain_tx_hash } =
       parsed.data;
@@ -129,11 +132,12 @@ export async function burnAcbu(
     // allowing bypass of critical financial controls via direct /burn/acbu route
     const paused = await isCurrencyWithdrawalPaused(currency);
     if (paused) {
-      throw new AppError(
-        `Single-currency withdrawals for ${currency} are temporarily paused (reserve below threshold). Basket withdrawals continue.`,
-        503,
-        "CIRCUIT_BREAKER",
-      );
+      res.status(503).json({
+        error: "Withdrawal paused for currency",
+        code: "CIRCUIT_BREAKER",
+        message: `Single-currency withdrawals for ${currency} are temporarily paused (reserve below threshold). Basket withdrawals continue.`,
+      });
+      return;
     }
 
     // Apply withdrawal limits - use retail as default if no audience is set
@@ -154,9 +158,9 @@ export async function burnAcbu(
         status: "pending",
         acbuAmountBurned: new Decimal(acbuNum),
         localCurrency: currency,
-        localAmount: new Decimal(localNum),
+        localAmount: localDecimal,
         recipientAccount: recipient_account as object,
-        fee: new Decimal(feeAcbu),
+        fee: feeAcbuDecimal,
         rateSnapshot: {
           acbu_ngn: null,
           timestamp: new Date().toISOString(),
