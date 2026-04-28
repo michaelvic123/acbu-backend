@@ -19,6 +19,10 @@ const envSchema = z.object({
   ADMIN_API_KEY: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
+  AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900000), // 15 minutes
+  AUTH_RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(5),
+  MAX_SIGNIN_ATTEMPTS: z.coerce.number().default(5),
+  SIGNIN_LOCKOUT_DURATION_MS: z.coerce.number().default(900000), // 15 minutes
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -58,6 +62,10 @@ export const config = {
   adminApiKey: env.ADMIN_API_KEY,
   rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
   rateLimitMaxRequests: env.RATE_LIMIT_MAX_REQUESTS,
+  authRateLimitWindowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
+  authRateLimitMaxRequests: env.AUTH_RATE_LIMIT_MAX_REQUESTS,
+  maxSigninAttempts: env.MAX_SIGNIN_ATTEMPTS,
+  signinLockoutDurationMs: env.SIGNIN_LOCKOUT_DURATION_MS,
 
   // Rate Limiting Fallback (during cache outages)
   rateLimitFallbackMaxRequests: parseInt(
