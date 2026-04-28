@@ -158,9 +158,9 @@ export async function burnAcbu(
         status: "pending",
         acbuAmountBurned: new Decimal(acbuNum),
         localCurrency: currency,
-        localAmount: new Decimal(localNum),
+        localAmount: localDecimal,
         recipientAccount: recipient_account as object,
-        fee: new Decimal(feeAcbu),
+        fee: feeAcbuDecimal,
         rateSnapshot: {
           acbu_ngn: null,
           timestamp: new Date().toISOString(),

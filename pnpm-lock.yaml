@@ -16,10 +16,10 @@ importers:
         version: 3.975.0
       '@prisma/client':
         specifier: ^5.19.0
-        version: 5.22.0(prisma@5.22.0)
+        version: 5.19.0(prisma@5.19.0)
       '@prisma/extension-accelerate':
         specifier: ^3.0.1
-        version: 3.0.1(@prisma/client@5.22.0(prisma@5.22.0))
+        version: 3.0.1(@prisma/client@5.19.0(prisma@5.19.0))
       '@stellar/stellar-sdk':
         specifier: ^15.0.1
         version: 15.0.1
@@ -89,9 +89,6 @@ importers:
       otplib:
         specifier: ^12.0.1
         version: 12.0.1
-      prisma:
-        specifier: ^5.19.0
-        version: 5.22.0
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -147,9 +144,6 @@ importers:
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@20.19.39)(typescript@5.9.3)
-      zod-to-json-schema:
-        specifier: ^3.25.2
-        version: 3.25.2(zod@3.25.76)
 
 packages:
 
@@ -3154,11 +3148,6 @@ packages:
     resolution: {integrity: sha512-D7eujBWkLa3p2sIpJA0d1pr7es+a7m0vFAnZLlCEKq/Ij2k0MLi9Br2UPxoxdYystm5K1yeBGzub0FlYUEWj2Q==}
     engines: {node: '>=8.0.0'}
     hasBin: true
-
-  zod-to-json-schema@3.25.2:
-    resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
-    peerDependencies:
-      zod: ^3.25.28 || ^4
 
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
@@ -6426,9 +6415,9 @@ snapshots:
       ansi-styles: 5.2.0
       react-is: 18.3.1
 
-  prisma@5.22.0:
+  prisma@5.19.0:
     dependencies:
-      '@prisma/engines': 5.22.0
+      '@prisma/engines': 5.19.0
     optionalDependencies:
       fsevents: 2.3.3
 
@@ -7007,9 +6996,5 @@ snapshots:
       validator: 13.15.26
     optionalDependencies:
       commander: 9.5.0
-
-  zod-to-json-schema@3.25.2(zod@3.25.76):
-    dependencies:
-      zod: 3.25.76
 
   zod@3.25.76: {}

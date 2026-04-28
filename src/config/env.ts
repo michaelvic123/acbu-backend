@@ -66,6 +66,10 @@ export const config = {
   apiKeySalt: env.API_KEY_SALT,
   rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
   rateLimitMaxRequests: env.RATE_LIMIT_MAX_REQUESTS,
+  authRateLimitWindowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
+  authRateLimitMaxRequests: env.AUTH_RATE_LIMIT_MAX_REQUESTS,
+  maxSigninAttempts: env.MAX_SIGNIN_ATTEMPTS,
+  signinLockoutDurationMs: env.SIGNIN_LOCKOUT_DURATION_MS,
 
   // Rate Limiting Fallback (during cache outages)
   rateLimitFallbackMaxRequests: parseInt(
