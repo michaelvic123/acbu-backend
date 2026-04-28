@@ -16,13 +16,19 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("7d"),
   JWT_CLOCK_TOLERANCE_SECONDS: z.coerce.number().default(30),
   API_KEY_SALT: z.string().default(""),
-  ADMIN_API_KEY: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
-  AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900000), // 15 minutes
-  AUTH_RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(5),
-  MAX_SIGNIN_ATTEMPTS: z.coerce.number().default(5),
-  SIGNIN_LOCKOUT_DURATION_MS: z.coerce.number().default(900000), // 15 minutes
+  // B-058: 64-char hex key (32 bytes) for AES-256-GCM PII field encryption.
+  // Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  PII_ENCRYPTION_KEY: z
+    .string()
+    .length(64, "PII_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)")
+    .regex(/^[0-9a-fA-F]+$/, "PII_ENCRYPTION_KEY must be a hex string")
+    .optional(),
+  // B-063: OpenAI integration config.
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_ORG_MONTHLY_BUDGET_USD: z.coerce.number().default(50),
+  OPENAI_MAX_TOKENS_PER_REQUEST: z.coerce.number().default(2000),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -54,12 +60,10 @@ export const config = {
   mongodbUri: env.MONGODB_URI,
   rabbitmqUrl: env.RABBITMQ_URL,
   jwtSecret: env.JWT_SECRET,
-  challengeTokenSecret: process.env.CHALLENGE_TOKEN_SECRET || 'default_secret',
   jwtExpiresIn: env.JWT_EXPIRES_IN,
   jwtClockToleranceSeconds: env.JWT_CLOCK_TOLERANCE_SECONDS,
   challengeTokenSecret: env.CHALLENGE_TOKEN_SECRET || env.JWT_SECRET,
   apiKeySalt: env.API_KEY_SALT,
-  adminApiKey: env.ADMIN_API_KEY,
   rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
   rateLimitMaxRequests: env.RATE_LIMIT_MAX_REQUESTS,
   authRateLimitWindowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
@@ -275,12 +279,10 @@ export const config = {
       | "ses"
       | "log",
     emailFrom:
-      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.io",
+      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.example.com",
     sendgridApiKey: process.env.SENDGRID_API_KEY || "",
     sesRegion:
       process.env.AWS_REGION || process.env.AWS_SES_REGION || "us-east-1",
-    sesAccessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
-    sesSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
     smsProvider: (process.env.NOTIFICATION_SMS_PROVIDER || "log") as
       | "twilio"
       | "africas_talking"
@@ -376,5 +378,47 @@ export const config = {
   },
 
   // CORS
-  corsOrigin: process.env.CORS_ORIGIN?.split(",") || [],
+  corsOrigin: process.env.CORS_ORIGIN?.split(",") || ["*"],
+
+  // S3 / KYC document storage (B-062)
+  s3: {
+    bucket: process.env.AWS_S3_KYC_BUCKET || "",
+    region: process.env.AWS_REGION || process.env.AWS_S3_REGION || "us-east-1",
+    /** Optional: override endpoint for local MinIO / S3-compatible stores. */
+    endpoint: process.env.AWS_S3_ENDPOINT || "",
+    /** Explicit credentials — falls back to IAM role / env chain if not set. */
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
+    /**
+     * Upload URL TTL in seconds. Default 900 (15 min).
+     * Keep short to limit the window for presigned URL abuse.
+     */
+    uploadUrlTtlSeconds: parseInt(
+      process.env.S3_UPLOAD_URL_TTL_SECONDS || "900",
+      10,
+    ),
+    /**
+     * Download URL TTL in seconds. Default 300 (5 min).
+     * Shorter than upload — read-once pattern recommended.
+     */
+    downloadUrlTtlSeconds: parseInt(
+      process.env.S3_DOWNLOAD_URL_TTL_SECONDS || "300",
+      10,
+    ),
+    /**
+     * Shared secret used to authenticate the virus-scan webhook callback.
+     * Must be set in production.
+     */
+    scanWebhookSecret: process.env.S3_SCAN_WEBHOOK_SECRET || "",
+  },
+
+  // B-058: PII field-level encryption (AES-256-GCM)
+  piiEncryptionKey: env.PII_ENCRYPTION_KEY,
+
+  // B-063: OpenAI guardrails
+  openai: {
+    apiKey: env.OPENAI_API_KEY,
+    orgMonthlyBudgetUsd: env.OPENAI_ORG_MONTHLY_BUDGET_USD,
+    maxTokensPerRequest: env.OPENAI_MAX_TOKENS_PER_REQUEST,
+  },
 };
