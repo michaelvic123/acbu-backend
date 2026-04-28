@@ -11,9 +11,12 @@ const envSchema = z.object({
   MONGODB_URI: z.string().min(1),
   RABBITMQ_URL: z.string().min(1),
   JWT_SECRET: z.string().min(1),
+  CHALLENGE_TOKEN_SECRET: z.string().optional(),
   PRISMA_ACCELERATE_URL: z.string().optional(),
   JWT_EXPIRES_IN: z.string().default("7d"),
+  JWT_CLOCK_TOLERANCE_SECONDS: z.coerce.number().default(30),
   API_KEY_SALT: z.string().default(""),
+  ADMIN_API_KEY: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900000), // 15 minutes
@@ -51,8 +54,12 @@ export const config = {
   mongodbUri: env.MONGODB_URI,
   rabbitmqUrl: env.RABBITMQ_URL,
   jwtSecret: env.JWT_SECRET,
+  challengeTokenSecret: process.env.CHALLENGE_TOKEN_SECRET || 'default_secret',
   jwtExpiresIn: env.JWT_EXPIRES_IN,
+  jwtClockToleranceSeconds: env.JWT_CLOCK_TOLERANCE_SECONDS,
+  challengeTokenSecret: env.CHALLENGE_TOKEN_SECRET || env.JWT_SECRET,
   apiKeySalt: env.API_KEY_SALT,
+  adminApiKey: env.ADMIN_API_KEY,
   rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
   rateLimitMaxRequests: env.RATE_LIMIT_MAX_REQUESTS,
   authRateLimitWindowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
@@ -159,16 +166,14 @@ export const config = {
     nativeAssetCode: ((): string => {
       const explicit = process.env.STELLAR_NATIVE_ASSET_CODE?.trim();
       if (explicit) return explicit.toUpperCase();
-      const bootstrapProfile = (
-        process.env.TESTNET_CUSTODIAL_BOOTSTRAP || ""
-      ).trim()
+      const bootstrapProfile = (process.env.TESTNET_CUSTODIAL_BOOTSTRAP || "")
+        .trim()
         .toLowerCase();
       return bootstrapProfile.includes("pi") ? "PI" : "XLM";
     })(),
     /** Wallet activation strategy. Default keeps the current create-account path, but makes it explicit/configurable. */
-    activationStrategy: (
-      process.env.WALLET_ACTIVATION_STRATEGY || "create_account_native"
-    ) as "create_account_native" | "disabled",
+    activationStrategy: (process.env.WALLET_ACTIVATION_STRATEGY ||
+      "create_account_native") as "create_account_native" | "disabled",
     /** Optional bootstrap profile from deployment docs/runbooks; used only for config alignment and diagnostics. */
     bootstrapProfile: process.env.TESTNET_CUSTODIAL_BOOTSTRAP || "",
     /** Minimum network-native balance sent to user wallet for activation. */
@@ -196,6 +201,16 @@ export const config = {
     baseFeeStroops: parseInt(process.env.STELLAR_BASE_FEE_STROOPS || "100", 10),
     /** When true, fetches the current recommended base fee from Horizon before each transaction. Falls back to baseFeeStroops on failure. */
     useDynamicFees: process.env.STELLAR_USE_DYNAMIC_FEES === "true",
+    /** Maximum total fee per Soroban transaction in stroops (base + resource fees). Default 10M stroops (~50 XLM at base fee 100). */
+    sorobanMaxFeeStroops: parseInt(
+      process.env.STELLAR_SOROBAN_MAX_FEE_STROOPS || "10000000",
+      10,
+    ),
+    /** Minimum total fee per Soroban transaction in stroops to prevent underpricing. Default 5000 stroops. */
+    sorobanMinFeeStroops: parseInt(
+      process.env.STELLAR_SOROBAN_MIN_FEE_STROOPS || "5000",
+      10,
+    ),
     /** Circle USDC issuer on Stellar testnet. Default is the well-known Circle testnet issuer. */
     usdcIssuerTestnet:
       process.env.USDC_ISSUER_TESTNET ??
@@ -260,10 +275,12 @@ export const config = {
       | "ses"
       | "log",
     emailFrom:
-      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.example.com",
+      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.io",
     sendgridApiKey: process.env.SENDGRID_API_KEY || "",
     sesRegion:
       process.env.AWS_REGION || process.env.AWS_SES_REGION || "us-east-1",
+    sesAccessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+    sesSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
     smsProvider: (process.env.NOTIFICATION_SMS_PROVIDER || "log") as
       | "twilio"
       | "africas_talking"
@@ -348,6 +365,16 @@ export const config = {
     },
   },
 
+  // Auth Security
+  auth: {
+    bruteMaxAttempts: parseInt(process.env.AUTH_BRUTE_MAX_ATTEMPTS || "5", 10),
+    bruteLockoutMs: parseInt(
+      process.env.AUTH_BRUTE_LOCKOUT_MS || "900000",
+      10,
+    ), // 15 mins
+    captchaSecret: process.env.CAPTCHA_SECRET || "",
+  },
+
   // CORS
-  corsOrigin: process.env.CORS_ORIGIN?.split(",") || ["*"],
+  corsOrigin: process.env.CORS_ORIGIN?.split(",") || [],
 };

@@ -1,3 +1,6 @@
+import { initTracing } from "./config/tracing";
+initTracing();
+
 import express from "express";
 import helmet from "helmet";
 import swaggerUi from "swagger-ui-express";
@@ -9,6 +12,7 @@ import { corsMiddleware } from "./middleware/cors";
 import { requestLogger } from "./middleware/logger";
 import { errorHandler } from "./middleware/errorHandler";
 import { standardRateLimiter } from "./middleware/rateLimiter";
+import { versioningMiddleware } from "./middleware/versioning";
 import { swaggerSpec } from "./config/swagger";
 import routes from "./routes";
 import webhookRoutes from "./routes/webhookRoutes";
@@ -16,7 +20,18 @@ import webhookRoutes from "./routes/webhookRoutes";
 const app: express.Express = express();
 
 // Security middleware
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        "img-src": ["'self'", "data:", "https://validator.swagger.io"],
+        "script-src": ["'self'", "'unsafe-inline'"],
+        "style-src": ["'self'", "https:", "'unsafe-inline'"],
+      },
+    },
+  }),
+);
 app.use(corsMiddleware);
 app.use(express.urlencoded({ extended: true }));
 
@@ -45,8 +60,10 @@ app.use(requestLogger);
 // Rate limiting
 app.use(standardRateLimiter);
 
-// API Documentation
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// API Documentation (disabled in production for security)
+if (config.nodeEnv !== "production") {
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 // Routes
 app.use(`/api/${config.apiVersion}`, routes);
@@ -147,6 +164,10 @@ async function startServer() {
         await import("./jobs/investmentWithdrawalJob");
       await startInvestmentWithdrawalScheduler();
 
+      // Start yield accrual scheduler (run once at startup to seed accruals)
+      const { startYieldAccrualScheduler } = await import("./jobs/yieldAccrualJob");
+      await startYieldAccrualScheduler();
+
       // Salary schedule: trigger recurring salary payments
       const { startSalaryScheduleScheduler } =
         await import("./jobs/salaryScheduleJob");
@@ -177,9 +198,11 @@ async function startServer() {
       logger.info(`Server running on port ${config.port}`);
       logger.info(`Environment: ${config.nodeEnv}`);
       logger.info(`API Version: ${config.apiVersion}`);
-      logger.info(
-        `API Documentation: http://localhost:${config.port}/api-docs`,
-      );
+      if (config.nodeEnv !== "production") {
+        logger.info(
+          `API Documentation: http://localhost:${config.port}/api-docs`,
+        );
+      }
     });
   } catch (error) {
     logger.error("Failed to start server", error);

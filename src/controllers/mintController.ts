@@ -23,17 +23,24 @@ import {
 import { enqueueUsdcConvertAndMint } from "../jobs/usdcConvertAndMintJob";
 import { AppError } from "../middleware/errorHandler";
 import { assertUserWalletAddress } from "../services/wallet/walletService";
+import {
+  parseMonetaryString,
+  decimalToContractNumber,
+  contractNumberToDecimal,
+  calculateFee,
+} from "../utils/decimalUtils";
 
 const MINT_FEE_BPS = 30; // 0.3%
+// DECIMALS_7 is kept for reference but replaced by decimalToContractNumber
 const DECIMALS_7 = 1e7;
 
-const usdcBodySchema = z.object({
+export const usdcBodySchema = z.object({
   usdc_amount: z
     .string()
     .min(1)
     .refine(
-      (s) => !Number.isNaN(Number(s)) && Number(s) > 0,
-      "must be positive",
+      (s) => /^\d+(\.\d{1,7})?$/.test(s.trim()) && parseFloat(s.trim()) > 0,
+      "must be positive with up to 7 decimal places",
     ),
   wallet_address: z.string().length(56).regex(/^G/),
   currency_preference: z.enum(["auto"]).optional(),
@@ -54,30 +61,28 @@ export async function mintFromUsdc(
     }
     const parsed = usdcBodySchema.safeParse(req.body);
     if (!parsed.success) {
-      res
-        .status(400)
-        .json({ error: "Invalid request", details: parsed.error.flatten() });
-      return;
+      throw new AppError("Invalid request", 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
+
     const { usdc_amount, wallet_address } = parsed.data;
     const userWalletAddress = await assertUserWalletAddress(
       userId,
       wallet_address,
     );
-    const usdcNum = Number(usdc_amount);
+    const usdcDecimal = parseMonetaryString(usdc_amount, "usdc_amount");
+    const usdcNum = usdcDecimal.toNumber(); // Only convert at boundary for limits service
     // SECURITY: Always enforce circuit breaker and deposit limits
     // Previously these checks were skipped when req.audience was undefined,
     // allowing bypass of critical financial controls via direct /mint/usdc route
     const paused = await isMintingPaused();
     if (paused) {
-      res.status(503).json({
-        error: "Minting paused",
-        code: "CIRCUIT_BREAKER",
-        message:
-          "New minting is temporarily paused (reserve ratio below 102%).",
-      });
-      return;
+      throw new AppError(
+        "New minting is temporarily paused (reserve ratio below 102%).",
+        503,
+        "CIRCUIT_BREAKER",
+      );
     }
+
 
     // Apply deposit limits - use retail as default if no audience is set
     // FIX #32: Defaulting to "retail" prevents limit bypass when audience is undefined
@@ -93,7 +98,7 @@ export async function mintFromUsdc(
         userId,
         stellarAddress: userWalletAddress,
         source: "usdc_deposit",
-        usdcAmount: new Decimal(usdcNum),
+        usdcAmount: new Decimal(usdcDecimal),
         xlmAmount: null,
         status: "pending_convert",
       },
@@ -120,16 +125,17 @@ export async function mintFromUsdcInternal(
   userId?: string,
   organizationId?: string,
 ): Promise<{ transactionId: string; acbuAmount: number }> {
-  const feeUsdc = (usdcAmount * MINT_FEE_BPS) / 10000;
-  const usdcAmount7 = Math.round(usdcAmount * DECIMALS_7).toString();
+  const usdcDecimal = new Decimal(usdcAmount);
+  const feeUsdcDecimal = calculateFee(usdcDecimal, MINT_FEE_BPS);
+  const usdcAmount7 = decimalToContractNumber(usdcDecimal).toString();
   const tx = await prisma.transaction.create({
     data: {
       userId: userId ?? undefined,
       organizationId: organizationId ?? undefined,
       type: "mint",
       status: "pending",
-      usdcAmount: new Decimal(usdcAmount),
-      fee: new Decimal(feeUsdc),
+      usdcAmount: new Decimal(usdcDecimal),
+      fee: new Decimal(feeUsdcDecimal),
       rateSnapshot: {
         source: "xlm_on_ramp",
         timestamp: new Date().toISOString(),
@@ -168,12 +174,13 @@ export async function mintFromUsdcInternal(
       usdcAmount: usdcAmount7,
       recipient: walletAddress,
     });
-    const acbuNum = Number(result.acbuAmount) / DECIMALS_7;
+    const acbuDecimal = contractNumberToDecimal(Number(result.acbuAmount));
+    const acbuNum = acbuDecimal.toNumber();
     await prisma.transaction.update({
       where: { id: tx.id },
       data: {
         status: "completed",
-        acbuAmount: new Decimal(acbuNum),
+        acbuAmount: new Decimal(acbuDecimal),
         blockchainTxHash: result.transactionHash,
         completedAt: new Date(),
       },
@@ -193,14 +200,14 @@ export async function mintFromUsdcInternal(
   }
 }
 
-const depositBodySchema = z.object({
+export const depositBodySchema = z.object({
   currency: z.string().length(3).toUpperCase(),
   amount: z
     .string()
     .min(1)
     .refine(
-      (s) => !Number.isNaN(Number(s)) && Number(s) > 0,
-      "must be positive",
+      (s) => /^\d+(\.\d{1,7})?$/.test(s.trim()) && parseFloat(s.trim()) > 0,
+      "must be positive with up to 7 decimal places",
     ),
   wallet_address: z.string().length(56).regex(/^G/),
 });
@@ -223,23 +230,23 @@ export async function depositFromBasketCurrency(
     }
     const { currency, amount, wallet_address } = parsed.data;
     if (isForbiddenDepositCurrency(currency)) {
-      res.status(400).json({
-        error: "Currency not allowed for deposit",
-        code: "DEPOSIT_ONLY_BASKET_CURRENCIES",
-        message: `Deposits in ${currency} are not allowed. Only basket (pool) currencies are accepted: ${BASKET_CURRENCIES.join(", ")}. For USDC, use the on-ramp (swap USDC→XLM via Stellar LP).`,
-        deposit_currencies_allowed: [...BASKET_CURRENCIES],
-      });
-      return;
+      throw new AppError(
+        `Deposits in ${currency} are not allowed. Only basket (pool) currencies are accepted: ${BASKET_CURRENCIES.join(", ")}. For USDC, use the on-ramp (swap USDC→XLM via Stellar LP).`,
+        400,
+        "DEPOSIT_ONLY_BASKET_CURRENCIES",
+        { deposit_currencies_allowed: [...BASKET_CURRENCIES] },
+      );
     }
     if (!isAllowedDepositCurrency(currency)) {
-      res.status(400).json({
-        error: "Invalid currency",
-        message: `Currency ${currency} is not in the basket. Allowed: ${BASKET_CURRENCIES.join(", ")}.`,
-        deposit_currencies_allowed: [...BASKET_CURRENCIES],
-      });
-      return;
+      throw new AppError(
+        `Currency ${currency} is not in the basket. Allowed: ${BASKET_CURRENCIES.join(", ")}.`,
+        400,
+        "INVALID_CURRENCY",
+        { deposit_currencies_allowed: [...BASKET_CURRENCIES] },
+      );
     }
-    const amountNum = Number(amount);
+    const amountDecimal = parseMonetaryString(amount, "amount");
+    const amountNum = amountDecimal.toNumber(); // Only convert at boundary for existing code
     const userId = req.apiKey?.userId;
     if (!userId) {
       throw new AppError("User context required for deposit", 401);
@@ -250,14 +257,13 @@ export async function depositFromBasketCurrency(
     // allowing bypass of critical financial controls via direct /mint/deposit route
     const paused = await isMintingPaused();
     if (paused) {
-      res.status(503).json({
-        error: "Minting paused",
-        code: "CIRCUIT_BREAKER",
-        message:
-          "New minting is temporarily paused (reserve ratio below 102%).",
-      });
-      return;
+      throw new AppError(
+        "New minting is temporarily paused (reserve ratio below 102%).",
+        503,
+        "CIRCUIT_BREAKER",
+      );
     }
+
 
     // Apply deposit limits - use retail as default if no audience is set
     const audience = req.audience || "retail";
@@ -275,10 +281,10 @@ export async function depositFromBasketCurrency(
         type: "mint",
         status: "pending",
         localCurrency: currency,
-        localAmount: new Decimal(amountNum),
+        localAmount: new Decimal(amountDecimal),
         rateSnapshot: {
           deposit_currency: currency,
-          amount: amountNum,
+          amount: amountDecimal.toNumber(),
           timestamp: new Date().toISOString(),
         },
       },
@@ -291,7 +297,7 @@ export async function depositFromBasketCurrency(
       newValue: {
         type: "mint",
         currency,
-        amount: amountNum,
+        amount: amountDecimal.toNumber(),
         wallet_address: wallet_address ? "***" : undefined,
       },
       performedBy: req.apiKey?.userId ?? undefined,
@@ -299,7 +305,7 @@ export async function depositFromBasketCurrency(
     res.status(202).json({
       transaction_id: tx.id,
       currency,
-      amount: String(amountNum),
+      amount: amountDecimal.toString(),
       wallet_address: wallet_address ? "***" : undefined,
       status: "pending",
       message:
